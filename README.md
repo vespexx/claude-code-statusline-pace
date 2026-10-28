@@ -54,8 +54,14 @@ Or feed your own input; `resets_at` must be a near-future epoch (a 5h window res
 echo "{\"model\":{\"display_name\":\"Opus\"},\"rate_limits\":{\"five_hour\":{\"used_percentage\":60,\"resets_at\":$(( $(date +%s) + 10800 ))}}}" | python3 statusline.py
 ```
 
-Input fields used: `model.display_name`, `effort.level`, `rate_limits.five_hour|seven_day.{used_percentage,resets_at}` (epoch seconds).
+Input fields used: `model.display_name`, `effort.level`, `rate_limits.five_hour|seven_day.{used_percentage,resets_at}` (epoch seconds or an ISO-8601 string).
 Missing fields are skipped; the script never raises, so a bad input cannot blank your status bar.
+
+## Tests
+
+```bash
+python3 -m unittest discover -s tests
+```
 
 ## Notes
 

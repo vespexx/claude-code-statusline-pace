@@ -8,7 +8,7 @@ Output: `Opus high | 5h pace 7/5% ETA 16:08/17:00; 7d pace 40/17% ETA Fri-14:15/
 
 Reads the status-line JSON on stdin (model, effort, rate_limits). Stdlib only, never raises.
 """
-import json, math, sys, time
+import datetime, json, math, sys, time
 
 DIM, RED, GRN, RST = "\033[2m", "\033[31m", "\033[32m", "\033[0m"
 WINDOWS = {"5h": 5 * 3600, "7d": 7 * 86400}
@@ -23,10 +23,20 @@ def fmt(w, ts):
         return "?"
 
 
+def epoch(v):
+    """resets_at as epoch seconds; also accepts an ISO-8601 string."""
+    try:
+        return float(v)
+    except (TypeError, ValueError):
+        return datetime.datetime.fromisoformat(str(v).replace("Z", "+00:00")).timestamp()
+
+
 def eta(w, util, elapsed, now, reset):
     """Linear extrapolation: the share used per share of elapsed time stays constant."""
     if util <= 0 or elapsed <= 0:
         return "-"
+    if util >= 1:
+        return "now"
     at = now + (1 - util) / util * elapsed * WINDOWS[w]
     return "-" if at >= reset else fmt(w, at)
 
@@ -36,7 +46,7 @@ def pace_part(rate, now):
     for w, length in WINDOWS.items():
         try:
             r = rate[RATE_KEYS[w]]
-            util, reset = float(r["used_percentage"]) / 100, float(r["resets_at"])
+            util, reset = float(r["used_percentage"]) / 100, epoch(r["resets_at"])
         except Exception:  # noqa: BLE001
             continue
         if not (math.isfinite(util) and math.isfinite(reset)):
