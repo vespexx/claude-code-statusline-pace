@@ -19,7 +19,7 @@ class Eta(unittest.TestCase):
         self.assertEqual(sl.eta("5h", 1.2, 0.5, NOW, NOW + 3600), "now")
 
     def test_iso_reset(self):
-        self.assertEqual(sl.epoch("2027-01-15T08:00:00Z"), 1799990400.0)
+        self.assertEqual(sl.epoch("2027-01-15T08:00:00Z"), 1800000000.0)
 
     def test_stale_reset(self):
         out = sl.pace_part({"five_hour": {"used_percentage": 50, "resets_at": NOW - 10}}, NOW)
