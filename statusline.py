@@ -1,16 +1,16 @@
 #!/usr/bin/env python3
 """Claude Code status line: model, effort and subscription pace with a run-out ETA for the 5h and 7d windows.
 
-Output: `Opus high | 5h pace 7/5% ETA 16:08/17:00; 7d pace 40/17% ETA Fri-14:15/Tue-08:00`
+Output: `Opus high | 5h pace 60/40% ETA 15:00/16:40; 7d pace 40/17% ETA Fri-08:52/Tue-08:52`
   pace   used % / elapsed % of the window
   ETA    when the window reaches 100% if the burn so far continues / when the window resets
-         (`-` when the limit will not run out before the reset)
+         (`-` when the limit will not run out before the reset, `now` when it is already at 100%)
 
 Reads the status-line JSON on stdin (model, effort, rate_limits). Stdlib only, never raises.
 """
 import datetime, json, math, sys, time
 
-DIM, RED, GRN, RST = "\033[2m", "\033[31m", "\033[32m", "\033[0m"
+RED, YEL, GRN, RST = "\033[31m", "\033[33m", "\033[32m", "\033[0m"
 WINDOWS = {"5h": 5 * 3600, "7d": 7 * 86400}
 RATE_KEYS = {"5h": "five_hour", "7d": "seven_day"}
 TIME_FMT = {"5h": "%H:%M", "7d": "%a-%H:%M"}
@@ -33,10 +33,10 @@ def epoch(v):
 
 def eta(w, util, elapsed, now, reset):
     """Linear extrapolation: the share used per share of elapsed time stays constant."""
-    if util <= 0 or elapsed <= 0:
-        return "-"
     if util >= 1:
         return "now"
+    if util <= 0 or elapsed <= 0:
+        return "-"
     at = now + (1 - util) / util * elapsed * WINDOWS[w]
     return "-" if at >= reset else fmt(w, at)
 
@@ -56,8 +56,8 @@ def pace_part(rate, now):
         else:
             elapsed = min(1.0, max(0.0, 1 - (reset - now) / length))
         out = eta(w, util, elapsed, now, reset)
-        col = DIM if out == "-" else RED if util >= 1 else GRN
-        parts.append("%s%s pace %d/%d%% ETA %s/%s%s" % (col, w, round(util * 100), round(elapsed * 100), out,
+        col = GRN if out == "-" else RED if util >= 1 else YEL
+        parts.append("%s%s pace %d/%d%% ETA %s/%s%s" % (col, w, math.floor(util * 100 + 1e-9), round(elapsed * 100), out,
                                                        fmt(w, reset) if now < reset else "now", RST))
     return "; ".join(parts)
 
