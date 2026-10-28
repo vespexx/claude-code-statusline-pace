@@ -1,0 +1,3 @@
+{"model": {"display_name": "Sonnet"},
+ "rate_limits": {"five_hour": {"used_percentage": 5, "resets_at": "@NOW+2h"},
+                 "seven_day": {"used_percentage": 10, "resets_at": "@NOW+3d"}}}
