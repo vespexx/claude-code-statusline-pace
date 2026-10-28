@@ -10,6 +10,7 @@ Opus high | 5h pace 60/40% ETA 13:42/15:22; 7d pace 40/17% ETA Fri-07:34/Tue-07:
 
 | Part | Meaning |
 | --- | --- |
+| `Opus high` | model name and effort level |
 | `5h` / `7d` | the rate-limit window |
 | `pace 60/40%` | used share of the limit / elapsed share of the window |
 | `ETA 13:42/15:22` | when the limit hits 100% at the current burn / when the window resets |
@@ -21,13 +22,13 @@ every refresh. Colours: green = will run out before the reset, grey = safe, red 
 
 ## Install
 
-Needs Python 3 (stdlib only) and a Claude subscription (Pro/Max): `rate_limits` is only present in the status-line input for those plans.
+Needs Python 3 (stdlib only) and a Claude subscription (Pro/Max): `rate_limits` is only present in the status-line input for those plans, and only after the first API response of a session. Without it the line shows just the model (`Opus high`); that is expected, not a broken install.
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/vespexx/claude-code-statusline-pace/main/statusline.py -o ~/.claude/statusline-pace.py
 ```
 
-Add to `~/.claude/settings.json`:
+Merge this key into your existing `~/.claude/settings.json` (do not replace the file), then restart Claude Code:
 
 ```json
 {
@@ -40,9 +41,17 @@ Add to `~/.claude/settings.json`:
 
 ## Try it without Claude Code
 
+Needs a clone of this repo (the one-file install has no `examples/`):
+
 ```bash
-examples/run.sh   # renders examples/*.json
-echo '{"model":{"display_name":"Opus"},"rate_limits":{"five_hour":{"used_percentage":60,"resets_at":1893456000}}}' | python3 statusline.py
+git clone https://github.com/vespexx/claude-code-statusline-pace && cd claude-code-statusline-pace
+examples/run.sh   # renders examples/*.json with timestamps relative to now
+```
+
+Or feed your own input; `resets_at` must be a near-future epoch (a 5h window resets within 5 hours):
+
+```bash
+echo "{\"model\":{\"display_name\":\"Opus\"},\"rate_limits\":{\"five_hour\":{\"used_percentage\":60,\"resets_at\":$(( $(date +%s) + 10800 ))}}}" | python3 statusline.py
 ```
 
 Input fields used: `model.display_name`, `effort.level`, `rate_limits.five_hour|seven_day.{used_percentage,resets_at}` (epoch seconds).
