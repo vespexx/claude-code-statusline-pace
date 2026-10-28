@@ -1,10 +1,10 @@
 #!/usr/bin/env python3
 """Claude Code status line: model, effort and subscription pace with a run-out ETA for the 5h and 7d windows.
 
-Output: `Opus high | 5h pace 7/5% ETA 16:08/17:00; 7d pace 40/17% ETA Fri-14:15/Tue-08:00`
+Output: `Opus high | 5h pace 60/40% ETA 15:00/16:40; 7d pace 40/17% ETA Fri-08:52/Tue-08:52`
   pace   used % / elapsed % of the window
   ETA    when the window reaches 100% if the burn so far continues / when the window resets
-         (`-` when the limit will not run out before the reset)
+         (`-` when the limit will not run out before the reset, `now` when it is already at 100%)
 
 Reads the status-line JSON on stdin (model, effort, rate_limits). Stdlib only, never raises.
 """
@@ -57,7 +57,7 @@ def pace_part(rate, now):
             elapsed = min(1.0, max(0.0, 1 - (reset - now) / length))
         out = eta(w, util, elapsed, now, reset)
         col = GRN if out == "-" else RED if util >= 1 else YEL
-        parts.append("%s%s pace %d/%d%% ETA %s/%s%s" % (col, w, int(util * 100), round(elapsed * 100), out,
+        parts.append("%s%s pace %d/%d%% ETA %s/%s%s" % (col, w, math.floor(util * 100 + 1e-9), round(elapsed * 100), out,
                                                        fmt(w, reset) if now < reset else "now", RST))
     return "; ".join(parts)
 

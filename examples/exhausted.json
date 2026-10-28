@@ -1,0 +1,3 @@
+{"model": {"display_name": "Opus"},
+ "rate_limits": {"five_hour": {"used_percentage": 100, "resets_at": "@NOW+1.5h"},
+                 "seven_day": {"used_percentage": 62, "resets_at": "@NOW+4d"}}}
