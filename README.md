@@ -18,7 +18,7 @@ Opus high | 5h pace 60/40% ETA 13:42/15:22; 7d pace 40/17% ETA Fri-07:34/Tue-07:
 
 **How the ETA is computed.** Linear extrapolation: the used share per elapsed share of the window stays constant,
 so `eta = now + (1 - used) / used * elapsed_time`. No history is stored; it is recomputed from the numbers Claude Code passes on
-every refresh. Colours: green = will run out before the reset, grey = safe, red = already at 100%.
+every refresh. Colours: green = safe (the limit will not run out before the reset), yellow = will run out before the reset, red = already at 100%.
 
 ## Install
 
@@ -28,16 +28,19 @@ Needs Python 3 (stdlib only) and a Claude subscription (Pro/Max): `rate_limits` 
 curl -fsSL https://raw.githubusercontent.com/vespexx/claude-code-statusline-pace/main/statusline.py -o ~/.claude/statusline-pace.py
 ```
 
-Merge this key into your existing `~/.claude/settings.json` (do not replace the file), then restart Claude Code:
+Merge this key into your existing `~/.claude/settings.json` (do not replace the file), then restart Claude Code. `statusLine` is a single setting: it **replaces any status line you already have**; to go back, restore your previous `command` (or delete the key). `refreshInterval` (seconds) keeps the ETA current while you are idle:
 
 ```json
 {
   "statusLine": {
     "type": "command",
-    "command": "python3 ~/.claude/statusline-pace.py"
+    "command": "python3 ~/.claude/statusline-pace.py",
+    "refreshInterval": 60
   }
 }
 ```
+
+macOS/Linux. On Windows use `python`/`py` and an absolute path instead of `~` in `command`.
 
 ## Try it without Claude Code
 
