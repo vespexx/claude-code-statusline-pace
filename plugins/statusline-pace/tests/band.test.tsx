@@ -36,3 +36,23 @@ test('ETA - when the elapsed share is zero (frac<=0)', async () => {
   const text = parts.map(p => p.text).join(' ')
   expect(text).toContain('ETA -/')
 })
+
+test('at >= reset clamps ETA to -', async () => {
+  // used: 0.2, resetsAt at 30% of window (elapsed 70%) -> expect "ETA -/"
+  const now = Date.now()
+  const lengthMs = 5 * 3600_000
+  // reset is at 30% elapsed, but at (ETA hit time) would be at 280% > 30%
+  const resetsAt = now + 0.3 * lengthMs
+
+  const snap = {
+    effort: '',
+    windows: [
+      { label: '5h', lengthMs, day: false, used: 0.2, resetsAt },
+    ],
+    ctx: null,
+  }
+
+  const parts = bandTexts(snap, 'gpt-4', now, true, false)
+  const text = parts.map(p => p.text).join(' ')
+  expect(text).toContain('ETA -/')
+})

@@ -60,8 +60,8 @@ function oneWin(win: Win, now: number) {
   const stale = left <= 0
   const util = stale ? 0 : win.used
   const frac = stale ? 0 : Math.min(1, Math.max(0, 1 - left / win.lengthMs))
-  const out =
-    util >= 1 ? 'now' : util <= 0 || frac <= 0 ? '-' : fmt(win.day, now + ((1 - util) / util) * frac * win.lengthMs)
+  const at = now + ((1 - util) / util) * frac * win.lengthMs
+  const out = util >= 1 ? 'now' : util <= 0 || frac <= 0 || at >= win.resetsAt ? '-' : fmt(win.day, at)
   const color = out === '-' ? 'success' : util >= 1 ? 'error' : 'warning'
   const usedPct = Math.floor(util * 100 + 1e-9)
   const text = `${win.label} pace ${usedPct}/${Math.round(frac * 100)}% ETA ${out}/${stale ? 'now' : fmt(win.day, win.resetsAt)}`
@@ -74,7 +74,9 @@ export function bandTexts(s: Snap, model: string, now: number, showModel: boolea
   const head = `${model}${model !== '' && s.effort !== '' ? ' ' + s.effort : ''}`
   const wins = s.windows.map(w => oneWin(w, now))
   const parts: { text: string; color?: string; dim?: boolean }[] = []
-  if (showModel && head !== '') parts.push({ text: head })
+  // Don't draw model-only when there are no rate-limit windows.
+  // If windows is empty, only show ctx when showContext is enabled.
+  if (showModel && head !== '' && s.windows.length > 0) parts.push({ text: head })
   wins.forEach((part, i) => {
     if (parts.length > 0) parts.push({ text: i === 0 ? ' | ' : ' · ', dim: true })
     parts.push({ text: part.text, color: part.color })
@@ -124,7 +126,9 @@ export const register: Register = (on, options) => {
     const s = await read($, snap)
     // No pace data yet (before the first response of a subscription session,
     // or off a subscription): stay silent rather than draw a model line alone.
-    if (s === null || (s.windows.length === 0 && s.ctx === null)) return next(e)
+    // The ctx value exists in every session — only draw when windows exist
+    // or showContext is explicitly enabled.
+    if (s === null || (s.windows.length === 0 && !showContext)) return next(e)
 
     const model = await $.session.model().catch(() => '')
     const parts = bandTexts(s, model, Date.now(), showModel, showContext)
