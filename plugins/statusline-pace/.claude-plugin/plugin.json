@@ -1,0 +1,25 @@
+{
+  "name": "statusline-pace",
+  "version": "0.1.0",
+  "description": "A pace band above the prompt: model, effort, and when the 5h / 7d subscription windows run out at the current burn.",
+  "author": { "name": "vespexx", "url": "https://github.com/vespexx" },
+  "homepage": "https://github.com/vespexx/claude-code-statusline-pace",
+  "repository": "https://github.com/vespexx/claude-code-statusline-pace",
+  "license": "MIT",
+  "keywords": ["status line", "rate limits", "subscription", "pace", "eta"],
+  "types": "./types/index.d.ts",
+  "userConfig": {
+    "showModel": {
+      "type": "boolean",
+      "title": "Show the model",
+      "description": "Show the model and effort (Opus high) at the start of the band.",
+      "default": true
+    },
+    "showContext": {
+      "type": "boolean",
+      "title": "Show context fill",
+      "description": "Show the context window fill (ctx 34%) after the windows.",
+      "default": false
+    }
+  }
+}

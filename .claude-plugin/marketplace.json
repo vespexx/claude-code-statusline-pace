@@ -1,0 +1,12 @@
+{
+  "name": "statusline-pace",
+  "owner": { "name": "vespexx", "url": "https://github.com/vespexx" },
+  "plugins": [
+    {
+      "name": "statusline-pace",
+      "source": "./plugins/statusline-pace",
+      "description": "A pace band above the prompt: model, effort, and when the 5h / 7d subscription windows run out at the current burn."
+    }
+  ],
+  "description": "claude-code-statusline-pace: the subscription pace, as a plugin (a band above the prompt) or as a plain status-line command."
+}

@@ -25,6 +25,20 @@ every refresh. Colours: green = safe (the limit will not run out before the rese
 
 ## Install
 
+### As a plugin (one command, no settings edit)
+
+At the prompt of a Claude Code session in a terminal:
+
+```
+/plugin install statusline-pace --marketplace vespexx/claude-code-statusline-pace
+```
+
+Answer `y` to add the marketplace, then pick a scope (user scope loads it in every session). A pace band appears **above the prompt**: the model and effort, the 5h/7d pace and the run-out ETAs — the same numbers as the status line below, drawn by the plugin itself, with no `statusLine` setting and no Python. From a shell: `claude plugin marketplace add vespexx/claude-code-statusline-pace && claude plugin install statusline-pace@statusline-pace`. Remove it: `/plugin uninstall statusline-pace`.
+
+The plugin needs a recent Claude Code (it uses the function-hooks mod API, early access; tested on 2.1.311) and a Claude subscription (Pro/Max) for the rate-limit figures, like the plain status line does. Without them the band stays silent and nothing else changes. If you already have a status line or another band above the prompt, the two coexist; ctrl+x ctrl+a collapses the band area.
+
+### The plain status line (any Claude Code, needs Python 3)
+
 Needs Python 3 (stdlib only) and a Claude subscription (Pro/Max): `rate_limits` is only present in the status-line input for those plans, and only after the first API response of a session. Without it the line shows just the model (`Opus high`); that is expected, not a broken install.
 
 ```bash
