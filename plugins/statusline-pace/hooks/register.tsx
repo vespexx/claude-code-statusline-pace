@@ -135,13 +135,25 @@ export const register: Register = (on, options) => {
     if (parts.length === 0) return next(e)
 
     const { Box, Text } = $.ui.resolve(e)
-    return (
+    const mine = (
       <Box>
         {parts.map((p, i) => (
           <Text key={`part-${i}`} color={p.color} dimColor={p.dim}>
             {p.text}
           </Text>
         ))}
+      </Box>
+    )
+    // The band draws one tree, so whatever the plugins beneath drew (another
+    // band, quote-reply's button) rides under the pace line here: take their
+    // tree and lay ours on top. `next(e)` resolves to a tree the engine draws
+    // (`{ type: 'engine', ref }` when none of them answered) — legal as a
+    // child of a Box, and a Text never holds one, so the wrap is a Box.
+    const rest = await next(e)
+    return (
+      <Box flexDirection="column">
+        {mine}
+        {rest}
       </Box>
     )
   })
