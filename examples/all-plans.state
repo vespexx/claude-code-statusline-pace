@@ -1,0 +1,6 @@
+{"updated": "@NOW+0h",
+ "plans": {"go": {"5h": {"utilization": 0.14, "reset": "@NOW+3h"},
+                  "7d": {"utilization": 0.45, "reset": "@NOW+6d"},
+                  "1mo": {"utilization": 0.73, "reset": "@NOW+26d"}},
+           "zai": {"5h": {"utilization": 0.2, "reset": "@NOW+3.5h"},
+                   "7d": {"utilization": 0.93, "reset": "@NOW+2.9d"}}}}

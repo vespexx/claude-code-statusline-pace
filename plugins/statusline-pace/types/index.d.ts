@@ -1,17 +1,15 @@
-// One rate-limit window as the mod holds it: the share used, when it resets,
-// and what the band shows it as (`5h` or `7d`).
+// One plan window as the mod holds it: which plan it belongs to, the kind the
+// band shows it as (`5h`, `7d`, `1mo`), the share used and when it resets.
+export type Kind = '5h' | '7d' | '1mo'
 export type Win = {
-  label: string
-  lengthMs: number
-  // True for the weekly window: its times show as `Fri-08:52`, the 5h ones as `15:00`.
-  day: boolean
+  kind: Kind
   used: number
   resetsAt: number
 }
 
-// What the band draws: the last figures the engine reported, taken on a
-// measurement, a turn step or the session's start. The model name is read
-// from the engine at draw time, not kept here.
+// What the band draws: the last figures the engine or the state file gave,
+// taken on a measurement, a turn step or the session's start. The model name
+// and the plan are read from the engine at draw time, not kept here.
 export type Snap = {
   effort: string
   windows: Win[]

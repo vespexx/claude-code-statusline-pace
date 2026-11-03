@@ -1,0 +1,4 @@
+{"model": {"id": "glm-5.3-flash-cloud-opencode-go-direct", "display_name": "GLM5.3flash (Cloud, Go Plus, ≈360M out.tok/mo)"},
+ "effort": {"level": "medium"},
+ "rate_limits": {"five_hour": {"used_percentage": 38, "resets_at": "@NOW+2h"},
+                 "seven_day": {"used_percentage": 19, "resets_at": "@NOW+5.8d"}}}
