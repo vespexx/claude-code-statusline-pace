@@ -5,30 +5,33 @@ A Claude Code status line that shows how fast you burn your subscription limits 
 ![status line](docs/statusline.png)
 
 ```
-Opus 5.5 high | Claude 5h pace 60/40% ETA 15:00/16:40 · 7d pace 40/17% ETA Fri-08:52/Tue-08:52
+Opus high | Claude 5h pace 60/40% ETA 15:00/16:40 · 7d pace 40/17% ETA Fri-08:52/Tue-08:52
 Go 5h pace 14/40% ETA -/23:58 · 7d pace 45/14% ETA Wed-10:00/Mon-03:00 · 1mo pace 73/13% ETA 08.11/29.11
 z.ai 5h pace 20/30% ETA -/14:22 · 7d pace 50/10% ETA Mon-08:00/Sun-08:00
 ```
 
-(Times in these examples are illustrative; the screenshot was rendered at another moment.)
+The screenshot stacks several cases, one per selected model: Opus (Claude only), a GLM model on the Go plan
+(Claude row, then the Go and z.ai rows from the windows file), an exhausted 5h window, and Sonnet. In a real
+session you see one block: the Claude row, plus one row per other plan that has data. Times are illustrative.
 
 | Part | Meaning |
 | --- | --- |
-| `Opus 5.5 high` | model name and effort level |
+| `Opus high` | model name and effort level |
+| `GLM5.3flash (Go Plus, ≈360M out.tok/mo)` | a long `/model` label is cut to the name, the plan tag and the token estimate; other items in the parentheses are dropped |
 | `5h` / `7d` / `1mo` | the rate-limit window |
 | `pace 60/40%` | used share of the limit / elapsed share of the window |
 | `ETA 15:00/16:40` | when the limit hits 100% at the current burn / when the window resets |
 | `ETA now/16:40` | the limit is already at 100% (red) |
 | `ETA -/14:22` | at the current burn the limit will not run out before the reset |
 | ` · ` | separator between windows |
-| ` | ` | separator before the first window on a row |
+| ` | ` | separator between the model head and the Claude windows (row 1 only) |
 | red / green | off-pace (red) or on-pace (green) |
 | **bold** | the plan label (Claude/Go/z.ai) of the plan behind the selected model |
 
 **How the ETA is computed.** Linear extrapolation: the used share per elapsed share of the window stays constant,
 so `eta = now + (1 - used) / used * elapsed_time`. No history is stored; it is recomputed from the numbers the router or the engine passes on every refresh.
 
-**Off-pace rules** (from the claude-litellm-router):
+**Off-pace rules** (the same thresholds a pace-aware model router uses to stop sending work to a plan):
 - **5h**: red when used > `max(1.5 × elapsed, 10%)` or used > 75%.
 - **7d / 1mo**: red when used ≥ 90% **or** used > elapsed + 5%.
 - Everything else is green.
@@ -56,8 +59,11 @@ The plugin needs a recent Claude Code (it uses the mods API, early access; teste
 - **Claude** (Pro/Max subscription): 5h and 7d windows from the engine's `rate_limits` on stdin, with a fallback to the state file `subscription`.
 - **OpenCode Go** (Go / Go Plus): 5h, 7d, and 1mo windows from the state file `plans.go`.
 - **z.ai** (GLM via z.ai): 5h and 7d windows from the state file `plans.zai`.
-- **OpenRouter**: no pace windows (free daily request counter only), so it shows no row.
 - The Claude row is shown whatever model is selected; the plan label of the selected model is bold.
+
+**Without a windows file** (`stateFile` empty, the default) you get the Claude row only, with no error. The Go and
+z.ai rows need a JSON file in the shape shown under [Windows file for Go and z.ai](#windows-file-for-go-and-zai); no
+exporter for it is published here, so you write it yourself from the vendors' usage APIs (or leave it off).
 
 **Important:** after installing or updating the plugin, **open a new Claude Code session** — long-lived sessions do not pick up reinstalled plugin rendering.
 
@@ -67,7 +73,7 @@ Only one plugin can answer the `ui.render { component: "AbovePrompt" }` hook *wi
 
 The `statusline-pace` plugin **always wraps `next(e)`** so other bands beneath it can coexist. If you do not see the pace band, check whether another plugin (e.g. `quote-reply`) sits above it alphabetically and answers without `next(e)`. Example: the upstream issue [vakovalskii/quote-reply#1](https://github.com/vakovalskii/quote-reply/issues/1) tracks fixing `quote-reply` to call `next(e)`.
 
-The chain order within the `user` tier is alphabetical by plugin name. `paste-preview` → `quote-reply` → `statusline-pace`. Run `claude --debug` to see a line like `statusline-pace: ui.render bypassed by quote-reply (tier user)` naming the plugin that took the band.
+The chain order within the `user` tier is alphabetical by plugin name, e.g. `paste-preview` → `quote-reply` → `statusline-pace`. To find the plugin that takes the band, disable the other above-prompt plugins one at a time (`/plugin disable <name>`), open a new session, and see when the pace band comes back.
 
 ### The plain status line (any Claude Code, needs Python 3)
 
@@ -116,9 +122,9 @@ Example `settings.json` snippet with a windows file:
 }
 ```
 
-### State file for Go and z.ai windows
+### Windows file for Go and z.ai
 
-The OpenCode Go windows (5h / 7d / 1mo) and z.ai windows (5h / 7d) come from a JSON file that some other tool keeps fresh. The author uses a small exporter (a launchd job, every 5 minutes) that polls the vendor usage APIs and writes `~/.local/state/subscription-quotas/windows.json`; any tool that writes the same shape works. The file shape:
+The OpenCode Go windows (5h / 7d / 1mo) and z.ai windows (5h / 7d) come from a JSON file that some other tool keeps fresh. The author uses a private exporter (a launchd job, every 5 minutes, not published) that polls the vendor usage APIs and writes `~/.local/state/subscription-quotas/windows.json`; any tool that writes the same shape works. The file shape:
 ```json
 {
   "updated": <epoch seconds>,
@@ -167,6 +173,7 @@ claude plugin validate plugins/statusline-pace
 
 ## Notes
 
+- OpenRouter is not shown: it has no pace windows (only a free daily request counter).
 - The ETA is a straight-line estimate: a burst at the start of a window makes it pessimistic, an idle start optimistic.
 - Times are in the local time zone of the machine running Claude Code.
 - The band wraps to two rows when it does not fit on one line (`flexWrap: wrap`).

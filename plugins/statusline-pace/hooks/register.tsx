@@ -115,7 +115,7 @@ export function stateWins(state: unknown, plan: 'go' | 'claude' | 'zai', now: nu
   const plans = stateObj.plans
   const plansObj = (typeof plans === 'object' && plans !== null) ? plans as Record<string, unknown> : {}
   const src = plansObj[plan]
-  if (typeof src !== 'object' || src === null) {
+  if (typeof src !== 'object' || src === null || Object.keys(src).length === 0) {
     // Claude fallback to subscription
     if (plan === 'claude') {
       const sub = stateObj.subscription

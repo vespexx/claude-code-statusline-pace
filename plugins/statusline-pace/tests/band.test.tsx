@@ -449,3 +449,11 @@ test('bandRows: separators are " · " between windows', () => {
   // Should have " · " between the two windows
   expect(text).toContain(' · ')
 })
+test('stateWins claude: empty plans.claude falls back to subscription', () => {
+  const now = Date.now()
+  const state = {
+    plans: { claude: {} },
+    subscription: { '5h': { utilization: 0.2, reset: Math.floor(now / 1000) + 60 } },
+  }
+  expect(stateWins(state, 'claude', now).length).toBe(1)
+})

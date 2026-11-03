@@ -90,7 +90,7 @@ def rate_windows(rate):
     for w, key in RATE_KEYS.items():
         try:
             r = rate[key]
-            out.append((w, float(r["used_percentage"]) / 100, epoch(r["resets_at"])))
+            out.append((w, max(0.0, float(r["used_percentage"])) / 100, epoch(r["resets_at"])))
         except Exception:  # noqa: BLE001
             continue
     return out
@@ -122,9 +122,11 @@ def state_windows(state, plan, now=None):
     for w in WINDOWS:
         x = src.get(w) if isinstance(src.get(w), dict) else {}
         try:
-            out.append((w, float(x["utilization"]), float(x["reset"])))
+            u, r = float(x["utilization"]), float(x["reset"])
         except (KeyError, TypeError, ValueError):
             continue
+        if math.isfinite(u) and math.isfinite(r):
+            out.append((w, u, r))
     return out
 
 

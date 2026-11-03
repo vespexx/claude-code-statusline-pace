@@ -264,5 +264,23 @@ class BuildRows(unittest.TestCase):
         self.assertIn(" · ", out)
 
 
+
+class BadInput(unittest.TestCase):
+    def test_nan_window_dropped_and_no_bare_row(self):
+        state = {"plans": {"go": {"5h": {"utilization": float("nan"), "reset": 1}}}}
+        self.assertEqual(sl.state_windows(state, "go"), [])
+        rows = sl.build_rows([], "", "Opus", "", True, False, None, state, time.time())
+        self.assertEqual(rows, [])
+
+    def test_negative_used_clamped(self):
+        rate = {"five_hour": {"used_percentage": -5, "resets_at": time.time() + 3600}}
+        self.assertEqual(sl.rate_windows(rate)[0][1], 0.0)
+
+    def test_empty_claude_plan_falls_back_to_subscription(self):
+        now = time.time()
+        state = {"plans": {"claude": {}}, "subscription": {"5h": {"utilization": 0.2, "reset": now + 60}}}
+        self.assertEqual(len(sl.state_windows(state, "claude", now)), 1)
+
+
 if __name__ == "__main__":
     unittest.main()
