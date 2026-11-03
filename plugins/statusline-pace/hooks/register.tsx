@@ -9,9 +9,8 @@ import type { Kind, Snap, Win } from '../types'
 // hits 100% at the burn so far / when the window resets. Linear, like the
 // plain `statusline.py` in this repo: no history is kept; the figures come
 // from the engine, pushed on `session.measure` and pulled at the start.
-// Plan-aware (v0.2): shows windows for the plan of the model currently selected
-// with /model. Claude plan -> rateLimits (five_hour/seven_day) + state fallback.
-// OpenCode Go plan -> state file plans.go (5h/7d/1mo). Other models -> no windows.
+// Plan-aware (v0.2): row 1 always shows Claude windows (engine rate limits + state fallback).
+// Rows below: Go and z.ai windows from the state file when present.
 // Keep in sync with statusline.py: plan_of, short_label, off_pace, state_windows.
 
 const snap = atom({ plugin: 'statusline-pace', key: 'snap' } as const, null, {
@@ -72,12 +71,17 @@ export function labelItems(label: string): [string, string[]] {
 }
 
 // Mirrors statusline.py plan_of: takes the whole /model entry string.
-export function planOf(model: string): 'claude' | 'go' | '' {
+// Returns 'claude', 'go', 'zai', or ''.
+export function planOf(model: string): 'claude' | 'go' | 'zai' | '' {
   const s = model.toLowerCase()
   const [, items] = labelItems(model)
   const itemSet = new Set(items)
   if (s.includes('opencode-go') || itemSet.has('Go') || itemSet.has('Go Plus')) {
     return 'go'
+  }
+  // zai check before claude: "zai" in id or label item starting with "z.ai"
+  if (s.includes('zai') || items.some(i => i.startsWith('z.ai'))) {
+    return 'zai'
   }
   if (itemSet.has('subscription') || s.includes('claude') || s.includes('opus') || s.includes('sonnet') || s.includes('haiku')) {
     return 'claude'
@@ -92,9 +96,21 @@ export function shortLabel(model: string): string {
   return keep.length > 0 ? `${name} (${keep.join(', ')})` : name
 }
 
-// Mirrors statusline.py state_windows.
-export function stateWins(state: unknown, plan: 'go' | 'claude'): Win[] {
+const STALE_THRESHOLD_MS = 21_600_000 // 6 hours
+
+function isStateStale(state: unknown, now: number = Date.now()): boolean {
+  if (typeof state !== 'object' || state === null) return false
+  const stateObj = state as Record<string, unknown>
+  const updated = stateObj.updated
+  if (typeof updated !== 'number' || !Number.isFinite(updated)) return false
+  return now - updated * 1000 > STALE_THRESHOLD_MS
+}
+
+// Mirrors statusline.py state_windows. Supports 'claude', 'go', 'zai'.
+// Stale file (updated > 6h ago) is treated as no data.
+export function stateWins(state: unknown, plan: 'go' | 'claude' | 'zai', now: number = Date.now()): Win[] {
   if (typeof state !== 'object' || state === null) return []
+  if (isStateStale(state, now)) return []
   const stateObj = state as Record<string, unknown>
   const plans = stateObj.plans
   const plansObj = (typeof plans === 'object' && plans !== null) ? plans as Record<string, unknown> : {}
@@ -129,11 +145,13 @@ function extractWins(src: Record<string, unknown>): Win[] {
 }
 
 // Mirrors statusline.py off_pace.
+// 5h: used > max(1.5 * elapsed, 0.1) or used > 0.75
+// 7d/1mo: used >= 0.9 OR used > elapsed + 0.05
 export function offPace(kind: Kind, util: number, frac: number): boolean {
   if (kind === '5h') {
     return util > Math.max(1.5 * frac, 0.1) || util > 0.75
   }
-  return util > frac + 0.05
+  return util >= 0.9 || util > frac + 0.05
 }
 
 // One window part with colour from offPace.
@@ -150,31 +168,49 @@ export function oneWin(win: Win, now: number) {
   return { text, color }
 }
 
-// Build the band parts. Same shape as before but colours from offPace,
-// separators ' · ' between windows, ' | ' before first window.
-// Never push empty text.
-export function bandTexts(
+type Part = { text: string; color?: string; dim?: boolean; bold?: boolean }
+
+const PLAN_NAME = { claude: 'Claude', go: 'Go', zai: 'z.ai' } as const
+const OTHER_PLANS = ['go', 'zai'] as const
+
+// `<Plan> 5h pace … · 7d pace …`; the plan of the selected model is bold.
+function planParts(plan: keyof typeof PLAN_NAME, wins: Win[], current: string, now: number): Part[] {
+  const parts: Part[] = [{ text: PLAN_NAME[plan], bold: plan === current }]
+  wins.forEach((w, i) => {
+    parts.push({ text: i === 0 ? ' ' : ' · ', dim: true })
+    parts.push(oneWin(w, now))
+  })
+  return parts
+}
+
+// The band as rows of parts. Row 1: the model head, then the Claude windows
+// (engine rate limits, else the state file), then ctx. Rows below: Go and
+// z.ai from the state file, one row per plan with data.
+export function bandRows(
   s: Snap | null,
   model: string,
   now: number,
   showModel: boolean,
-  showContext: boolean
-): { text: string; color?: string; dim?: boolean }[] {
+  showContext: boolean,
+  state: unknown
+): Part[][] {
+  const current = planOf(model)
+  const engine = s?.windows ?? []
+  const claude = engine.length > 0 ? engine : stateWins(state, 'claude', now)
+  const others = OTHER_PLANS.map(plan => planParts(plan, stateWins(state, plan, now), current, now))
+    .filter(parts => parts.length > 1)
+  const ctx = showContext && s !== null && s.ctx !== null ? s.ctx : null
+
+  const row1: Part[] = []
+  if (claude.length > 0) row1.push(...planParts('claude', claude, current, now))
+  if (ctx !== null) row1.push({ text: `${row1.length > 0 ? ' ' : ''}ctx ${Math.round(ctx)}%`, dim: true })
   const short = shortLabel(model)
   const effort = s?.effort ?? ''
   const head = `${short}${short !== '' && effort !== '' ? ' ' + effort : ''}`
-
-  const wins = s?.windows ?? []
-  const winParts = wins.map(w => oneWin(w, now))
-
-  const parts: { text: string; color?: string; dim?: boolean }[] = []
-  if (showModel && head !== '' && wins.length > 0) parts.push({ text: head })
-  winParts.forEach((part, i) => {
-    if (parts.length > 0) parts.push({ text: i === 0 ? ' | ' : ' · ', dim: true })
-    parts.push({ text: part.text, color: part.color })
-  })
-  if (showContext && s && s.ctx !== null) parts.push({ text: ` ctx ${Math.round(s.ctx)}%`, dim: true })
-  return parts.filter(p => p.text !== '')
+  if (showModel && head !== '' && (row1.length > 0 || others.length > 0)) {
+    row1.unshift({ text: head }, ...(row1.length > 0 ? [{ text: ' | ', dim: true }] : []))
+  }
+  return row1.length > 0 ? [row1, ...others] : others
 }
 
 // Cache state file read for 30s.
@@ -247,43 +283,27 @@ export const register: Register = (on, options) => {
     const s = await read($, snap)
 
     const model = await $.session.model().catch(() => '')
-    const plan = planOf(model)
 
-    // Build windows for the current plan.
-    let windows: Win[] = []
-    if (plan === 'claude') {
-      windows = s?.windows ?? []
-      if (windows.length === 0 && stateFile !== '') {
-        const state = await readStateFile($, stateFile)
-        windows = stateWins(state, 'claude')
-      }
-    } else if (plan === 'go') {
-      const state = await readStateFile($, stateFile)
-      windows = stateWins(state, 'go')
-    } else {
-      windows = s?.windows ?? []
+    // Read state file once
+    let state: unknown = null
+    if (stateFile !== '') {
+      state = await readStateFile($, stateFile)
     }
 
-    const snapForDraw: Snap | null = s === null ? null : {
-      effort: s.effort,
-      windows,
-      ctx: s.ctx,
-    }
-
-    // If no windows and no context to show, don't draw.
-    // When plan is 'go' but state has no windows yet, don't draw empty band.
-    if (snapForDraw === null || (snapForDraw.windows.length === 0 && !showContext)) return next(e)
-
-    const parts = bandTexts(snapForDraw, model, Date.now(), showModel, showContext)
-    if (parts.length === 0) return next(e)
+    const rows = bandRows(s, model, Date.now(), showModel, showContext, state)
+    if (rows.length === 0) return next(e)
 
     const { Box, Text } = $.ui.resolve(e)
     const mine = (
-      <Box flexDirection="row" flexWrap="wrap">
-        {parts.map((p, i) => (
-          <Text key={`part-${i}`} color={p.color} dimColor={p.dim}>
-            {p.text}
-          </Text>
+      <Box flexDirection="column">
+        {rows.map((rowParts, ri) => (
+          <Box key={`row-${ri}`} flexDirection="row" flexWrap="wrap">
+            {rowParts.map((p, i) => (
+              <Text key={`part-${i}`} color={p.color} dimColor={p.dim} weight={p.bold ? 'bold' : undefined}>
+                {p.text}
+              </Text>
+            ))}
+          </Box>
         ))}
       </Box>
     )

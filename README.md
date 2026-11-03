@@ -5,8 +5,9 @@ A Claude Code status line that shows how fast you burn your subscription limits 
 ![status line](docs/statusline.png)
 
 ```
-Opus 5.5 high | 5h pace 60/40% ETA 15:00/16:40 · 7d pace 40/17% ETA Fri-08:52/Tue-08:52
-GLM5.3flash (Go Plus, ≈360M вых.ток/мес) medium | 5h pace 14/40% ETA -/23:58 · 7d pace 45/14% ETA Wed-10:00/Mon-03:00 · 1mo pace 73/13% ETA 08.11/29.11
+Opus 5.5 high | Claude 5h pace 60/40% ETA 15:00/16:40 · 7d pace 40/17% ETA Fri-08:52/Tue-08:52
+Go 5h pace 14/40% ETA -/23:58 · 7d pace 45/14% ETA Wed-10:00/Mon-03:00 · 1mo pace 73/13% ETA 08.11/29.11
+z.ai 5h pace 20/30% ETA -/14:22 · 7d pace 50/10% ETA Mon-08:00/Sun-08:00
 ```
 
 (Times in these examples are illustrative; the screenshot was rendered at another moment.)
@@ -20,14 +21,16 @@ GLM5.3flash (Go Plus, ≈360M вых.ток/мес) medium | 5h pace 14/40% ETA 
 | `ETA now/16:40` | the limit is already at 100% (red) |
 | `ETA -/14:22` | at the current burn the limit will not run out before the reset |
 | ` · ` | separator between windows |
+| ` | ` | separator before the first window on a row |
 | red / green | off-pace (red) or on-pace (green) |
+| **bold** | the plan label (Claude/Go/z.ai) of the plan behind the selected model |
 
 **How the ETA is computed.** Linear extrapolation: the used share per elapsed share of the window stays constant,
 so `eta = now + (1 - used) / used * elapsed_time`. No history is stored; it is recomputed from the numbers the router or the engine passes on every refresh.
 
 **Off-pace rules** (from the claude-litellm-router):
 - **5h**: red when used > `max(1.5 × elapsed, 10%)` or used > 75%.
-- **7d / 1mo**: red when used > elapsed + 5%.
+- **7d / 1mo**: red when used ≥ 90% **or** used > elapsed + 5%.
 - Everything else is green.
 
 ## Install
@@ -50,9 +53,11 @@ claude plugin marketplace add vespexx/claude-code-statusline-pace && claude plug
 Remove it: `/plugin uninstall statusline-pace`.
 
 The plugin needs a recent Claude Code (it uses the mods API, early access; tested on 2.1.311). It shows rate-limit figures for:
-- **Claude** (Pro/Max subscription): 5h and 7d windows from the engine's `rate_limits` on stdin, with a fallback to the router's state file.
-- **OpenCode Go** (Go / Go Plus): 5h, 7d, and 1mo windows from the router's state file (`plans.go`).
-- Other models: no windows (the band is silent if `showContext` is off).
+- **Claude** (Pro/Max subscription): 5h and 7d windows from the engine's `rate_limits` on stdin, with a fallback to the state file `subscription`.
+- **OpenCode Go** (Go / Go Plus): 5h, 7d, and 1mo windows from the state file `plans.go`.
+- **z.ai** (GLM via z.ai): 5h and 7d windows from the state file `plans.zai`.
+- **OpenRouter**: no pace windows (free daily request counter only), so it shows no row.
+- The Claude row is shown whatever model is selected; the plan label of the selected model is bold.
 
 **Important:** after installing or updating the plugin, **open a new Claude Code session** — long-lived sessions do not pick up reinstalled plugin rendering.
 
@@ -66,7 +71,7 @@ The chain order within the `user` tier is alphabetical by plugin name. `paste-pr
 
 ### The plain status line (any Claude Code, needs Python 3)
 
-Needs Python 3 (stdlib only). It reads the same data sources as the plugin and prints one line to the status bar.
+Needs Python 3 (stdlib only). It reads the same data sources as the plugin and prints one or more lines to the status bar (Claude Code shows multi-line status line output).
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/vespexx/claude-code-statusline-pace/main/statusline.py -o ~/.claude/statusline-pace.py
@@ -93,10 +98,10 @@ The plugin accepts these user-configurable options (set via `/plugin configure s
 | Option | Type | Default | Description |
 | --- | --- | --- | --- |
 | `showModel` | boolean | `true` | Show the model name and effort at the start of the band. |
-| `showContext` | boolean | `false` | Show the context-window fill (`ctx 34%`) after the windows. |
-| `stateFile` | string | `""` | Path to a `claude-litellm-router` `state.json` for the OpenCode Go windows (`plans.go`) and the Claude subscription fallback. `~/` expands to `$HOME`. Empty = off. |
+| `showContext` | boolean | `false` | Show the context-window fill (`ctx 34%`) after the windows on row 1. |
+| `stateFile` | string | `""` | Path to the subscription-quotas exporter state file (`windows.json`) for the OpenCode Go windows (`plans.go`), z.ai windows (`plans.zai`), and the Claude subscription fallback (`subscription` / `plans.claude`). `~/` expands to `$HOME`. Empty = off. |
 
-Example `settings.json` snippet for a router user:
+Example `settings.json` snippet with a windows file:
 ```json
 {
   "pluginConfigs": {
@@ -104,16 +109,29 @@ Example `settings.json` snippet for a router user:
       "options": {
         "showModel": true,
         "showContext": false,
-        "stateFile": "~/.local/state/claude-litellm-router/state.json"
+        "stateFile": "~/.local/state/subscription-quotas/windows.json"
       }
     }
   }
 }
 ```
 
-### Router state file for Go windows
+### State file for Go and z.ai windows
 
-The OpenCode Go windows (5h / 7d / 1mo) come from `claude-litellm-router`, which writes them into its state file as `plans.go`. The plugin reads that file via the `stateFile` option. The state file path is typically `~/.local/state/claude-litellm-router/state.json`. The router updates it after Go answers (cached 5 min). The plain `statusline.py` in this repo reads the same file via `PACE_STATE_FILE` env var; the plugin uses `stateFile` for the same purpose.
+The OpenCode Go windows (5h / 7d / 1mo) and z.ai windows (5h / 7d) come from a JSON file that some other tool keeps fresh. The author uses a small exporter (a launchd job, every 5 minutes) that polls the vendor usage APIs and writes `~/.local/state/subscription-quotas/windows.json`; any tool that writes the same shape works. The file shape:
+```json
+{
+  "updated": <epoch seconds>,
+  "plans": {
+    "claude": {"5h": {"utilization": 0.38, "reset": <epoch>}, "7d": {...}},
+    "go": {"5h": {...}, "7d": {...}, "1mo": {...}},
+    "zai": {"5h": {...}, "7d": {...}}
+  }
+}
+```
+A window or plan can be absent. The old router state shape `{"subscription": {"5h": {...}, "7d": {...}}}` still works as the Claude fallback (the plugin and the plain status line both accept it). The plugin reads that file via the `stateFile` option; the plain `statusline.py` in this repo reads the same file via `PACE_STATE_FILE` env var.
+
+**Stale file handling:** when the state has a numeric top-level `updated` and `now - updated > 21600` s (6 hours), the plans from the file are ignored (treated as no data). No `updated` key → the data is used (old router shape).
 
 ## Try it without Claude Code
 
@@ -121,7 +139,7 @@ Needs a clone of this repo (the one-file install has no `examples/`):
 
 ```bash
 git clone https://github.com/vespexx/claude-code-statusline-pace && cd claude-code-statusline-pace
-examples/run.sh   # renders examples/*.json with timestamps relative to now
+examples/run.sh   # renders examples/*.json with timestamps relative to now; a sibling <name>.state is used as the windows file
 ```
 
 Or feed your own input; `resets_at` must be a near-future epoch (a 5h window resets within 5 hours):

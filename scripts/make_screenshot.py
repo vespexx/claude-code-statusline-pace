@@ -11,13 +11,15 @@ CHROME = os.environ.get("CHROME", "/Applications/Google Chrome.app/Contents/MacO
 
 
 def tspans(line):
-    res, cur = [], "#e6e6e6"
+    res, cur, weight = [], "#e6e6e6", "normal"
     for tok in re.split(r"(\x1b\[\d+m)", line):
         m = re.match(r"\x1b\[(\d+)m", tok)
-        if m:
-            cur = COLS.get(m.group(1), "#e6e6e6")
+        if m and m.group(1) == "1":
+            weight = "bold"
+        elif m:
+            cur, weight = COLS.get(m.group(1), "#e6e6e6"), "normal"
         elif tok:
-            res.append('<tspan fill="%s">%s</tspan>' % (cur, html.escape(tok)))
+            res.append('<tspan fill="%s" font-weight="%s">%s</tspan>' % (cur, weight, html.escape(tok)))
     return "".join(res)
 
 
