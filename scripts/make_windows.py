@@ -94,6 +94,7 @@ def split_args(argv):
 def write_atomic(path, text):
     tmp = "%s.tmp.%d" % (path, os.getpid())
     try:
+        os.makedirs(os.path.dirname(path) or ".", exist_ok=True)
         with open(tmp, "w") as f:
             f.write(text)
         os.replace(tmp, path)
