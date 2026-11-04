@@ -2,39 +2,49 @@
 """Claude Code status line: model, effort and the pace of the plan behind the current model, with run-out ETAs.
 
 Output (multi-line, aligned columns):
-  qwen-local-pool medium ctx 4% | Claude 5h pace 7/28% ETA -/14:00 · 1d pace 12/28% ETA -/14:00 · 7d pace 23/16% ETA Sun-02:48/Tue-08:00
-                                Go     5h pace 0/10% ETA -/14:53 · 7d pace 100/33% ETA now/Mon-03:00 · 1mo pace 100/16% ETA now/29.11
-                                z.ai                               7d pace 93/65% ETA Wed-18:34/Fri-21:53
+  qwen-local-pool medium ctx 4%
+  Claude 5h pace 7/28% ETA -/14:00 · 7d pace 23/16% ETA Sun-02:48/Tue-08:00
+  Go     5h pace 0/10% ETA -/14:53 · 7d pace 100/33% ETA now/Mon-03:00 · 1mo pace 100/16% ETA now/29.11
+  z.ai                               7d pace 93/65% ETA Wed-18:34/Fri-21:53
+  Gemini ok
+  agents coder:glm-5.3-flash, explorer:starting x2
 
-Row 1: model+effort[ ctx N%] | <plan> <windows> (plan of selected model is bold)
-Rows 2..n: other plans from state file, one row per plan with data
+Line 1: model+effort[ ctx N%]
+Lines 2..n: one row per plan with data, Claude first (plan of selected model is bold)
+Last line: the running sub-agents (`<type>:<model>`, the model of the last answer in the sub-agent transcript, `starting`
+          before the first one), only while there are any: a transcript under <transcript dir>/<session>/subagents/
+          written within the last 120 s counts as running
+status  a plan may carry a short text (`plans.<plan>.status`, e.g. "ok", "slow 5m"): shown after its windows,
+          green when "ok", else yellow; a plan with only a status still gets a row
 pace    used % / elapsed % of the window
 ETA     when the window reaches 100% if the burn so far continues / when the window resets
           (`-` when the limit will not run out before the reset, `now` when it is already at 100%)
 colour  green on pace, red off pace: 5h used > max(1.5 x elapsed, 10%) or > 75%; 1d/7d/1mo used >= 90% OR used > elapsed + 5%
 bold    the plan label (Claude/Fable/Go/z.ai/OpenRouter) of the plan behind the selected model
 
-Plans (row order): claude, fable, go, zai, openrouter.
+Plans (row order): claude, fable, go, zai, openrouter, gemini.
 Claude windows from engine `rate_limits` on stdin (5h/7d), fallback to state file `plans.claude` or old `subscription`.
 All other plans only from state file `plans.<plan>`.
-plan_of/plan_of: 'fable' when id/label contains "fable" (before claude check), 'openrouter' when contains "openrouter" (before claude).
+plan_of: 'fable' when id/label contains "fable" (before claude check), 'openrouter' when contains "openrouter" (before claude),
+'gemini' when contains "gemini" (after openrouter: a Gemini model through OpenRouter counts as OpenRouter).
 Kind order: 5h, 1d, 7d, 1mo. 1d length 86400s, format HH:MM like 5h. Off-pace rule for 1d = long-window rule.
-State file: `{"updated": <epoch>, "plans": {"claude": {...}, "fable": {...}, "go": {...}, "zai": {...}, "openrouter": {...}}}`.
+State file: `{"updated": <epoch>, "plans": {"claude": {...}, "fable": {...}, "go": {...}, "zai": {...}, "openrouter": {...},
+"gemini": {...}}}`; each plan: `{"5h": {"utilization": 0..1, "reset": <epoch>}, ..., "status": "<text>"}`.
 A window or plan can be absent. Old router shape `{"subscription": {...}}` still works as Claude fallback.
 Stale file (updated > 6h ago) ignored. NaN filtered, negative clamped.
 Stdlib only, never raises.
 """
 import datetime, json, math, os, re, sys, time, urllib.request
 
-RED, YEL, GRN, RST, BLD = "\033[31m", "\033[33m", "\033[32m", "\033[0m", "\033[1m"
+RED, YEL, GRN, RST, BLD, DIM = "\033[31m", "\033[33m", "\033[32m", "\033[0m", "\033[1m", "\033[2m"
 WINDOWS = {"5h": 5 * 3600, "1d": 86400, "7d": 7 * 86400, "1mo": 30 * 86400}
 RATE_KEYS = {"5h": "five_hour", "7d": "seven_day"}
 TIME_FMT = {"5h": "%H:%M", "1d": "%H:%M", "7d": "%a-%H:%M", "1mo": "%d.%m"}
 PLAN_TAGS = {"Go", "Go Plus", "subscription", "free tier", "Fable", "OpenRouter"}
 STALE_THRESHOLD_S = 21600  # 6 hours
 
-PLAN_DISPLAY = {"claude": "Claude", "fable": "Fable", "go": "Go", "zai": "z.ai", "openrouter": "OpenRouter"}
-PLAN_ORDER = ("claude", "fable", "go", "zai", "openrouter")
+PLAN_DISPLAY = {"claude": "Claude", "fable": "Fable", "go": "Go", "zai": "z.ai", "openrouter": "OpenRouter", "gemini": "Gemini"}
+PLAN_ORDER = ("claude", "fable", "go", "zai", "openrouter", "gemini")
 KIND_ORDER = ("5h", "1d", "7d", "1mo")
 WEEK = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"]
 
@@ -116,17 +126,28 @@ def is_state_stale(state, now=None):
     return now - updated > STALE_THRESHOLD_S
 
 
-def state_windows(state, plan, now=None):
-    """A plan's windows from the state file: plans.<plan>.<window> = {utilization, reset}; `subscription` for Claude fallback.
-    Stale file (updated > 6h ago) is treated as no data."""
-    if not isinstance(state, dict):
-        return []
-    if is_state_stale(state, now):
-        return []
+def state_plan(state, plan, now=None):
+    """plans.<plan> of the state file ({} when absent); `subscription` for Claude fallback. Stale file (updated > 6h ago)
+    is treated as no data."""
+    if not isinstance(state, dict) or is_state_stale(state, now):
+        return {}
     plans = state.get("plans") if isinstance(state.get("plans"), dict) else {}
     src = plans.get(plan) if isinstance(plans.get(plan), dict) else {}
     if not src and plan == "claude" and isinstance(state.get("subscription"), dict):
         src = state["subscription"]
+    return src
+
+
+def state_status(state, plan, now=None):
+    """plans.<plan>.status: a short text such as "ok" or "slow 5m" ("" when absent), at most 40 characters."""
+    v = state_plan(state, plan, now).get("status")
+    return re.sub(r"[\x00-\x1f\x7f]", "", v).strip()[:40] if isinstance(v, str) else ""
+
+
+def state_windows(state, plan, now=None):
+    """A plan's windows from the state file: plans.<plan>.<window> = {utilization, reset}; `subscription` for Claude fallback.
+    Stale file (updated > 6h ago) is treated as no data."""
+    src = state_plan(state, plan, now)
     out = []
     for w in KIND_ORDER:
         x = src.get(w) if isinstance(src.get(w), dict) else {}
@@ -145,7 +166,7 @@ def label_items(label):
 
 
 def plan_of(model_id, label):
-    """`claude`, `fable`, `go`, `zai`, `openrouter` or "" (no plan with windows) for the model, by its id and its /model label."""
+    """`claude`, `fable`, `go`, `zai`, `openrouter`, `gemini` or "" (no plan with windows) for the model, by its id and its /model label."""
     s = (model_id + " " + label).lower()
     items = set(label_items(label)[1])
     # fable check before claude
@@ -154,6 +175,8 @@ def plan_of(model_id, label):
     # openrouter check before claude
     if "openrouter" in s or "OpenRouter" in items:
         return "openrouter"
+    if "gemini" in s:
+        return "gemini"
     if "opencode-go" in s or items & {"Go", "Go Plus"}:
         return "go"
     # zai check before claude: "zai" in id or label item starting with "z.ai"
@@ -284,29 +307,27 @@ def read_oauth(now):
 
 
 def build_rows(snap_wins, model_id, label, effort, show_model, show_context, ctx_percent, state, now):
-    """The aligned rows (mirrors the plugin's bandRows). Row 1 starts with the head (`<model> <effort> ctx N%` + " | "),
-    later rows are indented to the same column. Each row: the plan label padded to the longest one, then one column per
-    kind (5h, 1d, 7d, 1mo) that any row has, each as wide as its longest cell. A gap of 3 before every column but the
-    first: " · " when the row has this cell and an earlier one, else spaces. Claude windows come from stdin, else the
-    file; the other plans only from the file."""
+    """The aligned rows (mirrors the plugin's bandRows). Line 1 is the head (`<model> <effort> ctx N%`), then one row per
+    plan, Claude first. Each row: the plan label padded to the longest one, then one column per kind (5h, 1d, 7d, 1mo)
+    that any row has, each as wide as its longest cell. A gap of 3 before every column but the first: " · " when the row
+    has this cell and an earlier one, else spaces. The plan's status text goes last. One plan row = no padding. Claude
+    windows come from stdin, else the file; the other plans only from the file."""
     current = plan_of(model_id, label)
-    plans = [(p, w) for p, w in ((p, snap_wins if p == "claude" and snap_wins else state_windows(state, p, now))
-                                 for p in PLAN_ORDER) if w]
+    plans = [(p, w, st) for p, w, st in ((p, snap_wins if p == "claude" and snap_wins else state_windows(state, p, now),
+                                          state_status(state, p, now)) for p in PLAN_ORDER) if w or st]
     ctx = " ctx %d%%" % round(ctx_percent) if show_context and ctx_percent is not None else ""
     short = short_label(label)
     head = short + (" " + effort if effort else "") + ctx if show_model and short else ""
     if not plans:
         return [head] if head and ctx else []
-    cells = [{w: window_part(w, u, r, now) for w, u, r in wins} for _, wins in plans]
+    cells = [{w: window_part(w, u, r, now) for w, u, r in wins} for _, wins, _ in plans]
     kinds = [k for k in KIND_ORDER if any(k in c for c in cells)]
     width = {k: max(visible_len(c.get(k, "")) for c in cells) for k in kinds}
-    label_w = max(len(PLAN_DISPLAY[p]) for p, _ in plans)
-    prefix = head + " | " if head else ""
-    rows = []
-    for i, ((plan, _), c) in enumerate(zip(plans, cells)):
+    label_w = max(len(PLAN_DISPLAY[p]) for p, _, _ in plans)
+    rows = [head] if head else []
+    for (plan, _, status), c in zip(plans, cells):
         name = PLAN_DISPLAY[plan]
-        row = (prefix if i == 0 else " " * len(prefix)) + (BLD + name + RST if plan == current else name)
-        row += " " * (label_w - len(name) + 1)
+        row = lead = (BLD + name + RST if plan == current else name) + " " * (label_w - len(name) + 1)
         seen = False
         for ki, k in enumerate(kinds):
             cell = c.get(k, "")
@@ -314,8 +335,72 @@ def build_rows(snap_wins, model_id, label, effort, show_model, show_context, ctx
                 row += " · " if cell and seen else "   "
             row += cell + " " * (width[k] - visible_len(cell))
             seen = seen or bool(cell)
-        rows.append(row.rstrip())
+        row = row.rstrip()
+        if status:  # after the last cell, or in the first column when the plan has no windows
+            row = (row + " · " if seen else lead) + (GRN if status == "ok" else YEL) + status + RST
+        rows.append(row)
     return rows
+
+
+ACTIVE_S = 120
+
+
+def last_model(path):
+    """The model of the last assistant message in a transcript (reads only the last 256 KB), None before the first one,
+    "?" when the file cannot be read."""
+    try:
+        with open(path, "rb") as f:
+            f.seek(0, 2)
+            f.seek(max(0, f.tell() - 262144))
+            lines = f.read().splitlines()
+    except OSError:
+        return "?"
+    for raw in reversed(lines):
+        if b'"assistant"' not in raw:
+            continue
+        try:
+            msg = json.loads(raw).get("message") or {}
+        except Exception:  # noqa: BLE001
+            continue
+        if isinstance(msg, dict) and msg.get("role") == "assistant" and msg.get("model") and msg["model"] != "<synthetic>":
+            return str(msg["model"])
+    return None
+
+
+def subagents(inp, now):
+    """[(type, model or None)] of the sub-agents running now: their transcripts were written within ACTIVE_S."""
+    tp, sid = str(inp.get("transcript_path") or ""), str(inp.get("session_id") or "")
+    d = os.path.join(os.path.dirname(tp), sid, "subagents") if tp and sid else ""
+    try:
+        names = sorted(os.listdir(d)) if d else []
+    except OSError:
+        names = []
+    out = []
+    for n in names:
+        p = os.path.join(d, n)
+        try:
+            if not n.endswith(".jsonl") or now - os.path.getmtime(p) > ACTIVE_S:
+                continue
+        except OSError:
+            continue
+        kind = "agent"
+        try:
+            with open(p[:-len(".jsonl")] + ".meta.json") as f:
+                kind = str(json.load(f).get("agentType") or kind)
+        except Exception:  # noqa: BLE001
+            pass
+        out.append((kind, last_model(p)))
+    return out
+
+
+def agents_row(agents):
+    """`agents coder:glm-5.3-flash, explorer:starting x2` ("" when none): the type without a `worker-` prefix, the model
+    without a `claude-` prefix, equal pairs counted."""
+    counts = {}
+    for kind, model in agents:
+        key = (kind.replace("worker-", ""), model.replace("claude-", "") if model else "starting")
+        counts[key] = counts.get(key, 0) + 1
+    return "agents " + ", ".join("%s:%s%s" % (k, m, " x%d" % n if n > 1 else "") for (k, m), n in counts.items()) if counts else ""
 
 
 def visible_len(text):
@@ -349,7 +434,9 @@ def main():
             ctx_percent = val
 
     rows = build_rows(snap_wins, mid, label, effort, True, True, ctx_percent, state, now)
-    sys.stdout.write("\n".join(rows) or (short_label(label) + (" " + effort if effort else "")))
+    rows = rows or [short_label(label) + (" " + effort if effort else "")]
+    agents = agents_row(subagents(inp, now))
+    sys.stdout.write("\n".join(rows + ([DIM + agents + RST] if agents else [])))
 
 
 if __name__ == "__main__":

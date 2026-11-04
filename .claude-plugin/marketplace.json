@@ -1,11 +1,14 @@
 {
   "name": "statusline-pace",
-  "owner": { "name": "vespexx", "url": "https://github.com/vespexx" },
+  "owner": {
+    "name": "vespexx",
+    "url": "https://github.com/vespexx"
+  },
   "plugins": [
     {
       "name": "statusline-pace",
       "source": "./plugins/statusline-pace",
-      "description": "A pace band above the prompt: aligned columns for 5h/1d/7d/1mo, ctx in the head, and rows for Claude, Fable, Go, z.ai, OpenRouter plans."
+      "description": "The subscription pace above the prompt: the model and ctx on line 1, then aligned 5h/1d/7d/1mo rows for Claude, Fable, Go, z.ai, OpenRouter and Gemini."
     }
   ],
   "description": "claude-code-statusline-pace: the subscription pace, as a plugin (a band above the prompt) or as a plain status-line command."

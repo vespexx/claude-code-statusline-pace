@@ -1,0 +1,4 @@
+{"model": {"id": "claude-opus-5-5", "display_name": "Opus 5.5"}, "effort": {"level": "high"},
+ "rate_limits": {"five_hour": {"used_percentage": 19, "resets_at": "@NOW+3h"},
+                 "seven_day": {"used_percentage": 24, "resets_at": "@NOW+4.2d"}},
+ "context_window": {"used_percentage": 12}}

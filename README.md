@@ -1,46 +1,88 @@
 # claude-code-statusline-pace
 
-A Claude Code status line that shows how fast you burn your subscription limits and **when the plan windows will run out**.
+Shows how fast you burn your Claude Code subscription limits and **when the plan windows will run out**: the used
+share against the elapsed share of each window (5h, 7d, ...), a run-out ETA, and red when you are ahead of pace. A last
+line lists the sub-agents running right now and the model each one really answered with.
 
-![status line](docs/statusline.png)
+**Current release: [v0.4.0](https://github.com/vespexx/claude-code-statusline-pace/releases/tag/v0.4.0)** —
+[install it as a plugin](#a-plugin-band-above-the-prompt) or [as a status line](#b-a-status-line-below-the-prompt).
+
+## Two ways to show it
+
+The same rows, drawn by the same rules, in one of two places. Pick one (both at once show the rows twice).
+
+| | **A. Plugin** (band above the prompt) | **B. Status line** (below the prompt) |
+| --- | --- | --- |
+| Install | one `/plugin install` command | download one Python file, add `statusLine` to `settings.json` |
+| Needs | a recent Claude Code with plugin mods (tested on 2.1.311) | any Claude Code, Python 3 (stdlib only) |
+| Your existing status line | kept | replaced |
+| Fable row (Max $100 and above) | on by default, the plugin never sees the token | opt-in `PACE_OAUTH=1`, the script reads the token itself |
+| Other plans (Go, z.ai, OpenRouter, Gemini) | option `stateFile` | env `PACE_STATE_FILE` |
+
+**Only a Claude subscription** (here Max $100, with its Fable weekly limit), no setup after install:
+
+| A. Plugin | B. Status line |
+| --- | --- |
+| ![plugin, Claude Max only](docs/plugin-max-100.png) | ![status line, Claude Max only](docs/statusline-max-100.png) |
 
 ```
-GLM5.3flash (Go Plus) medium ctx 42% | Claude     5h pace 38/60% ETA -/13:03                              · 7d pace 19/17% ETA Mon-13:49/Tue-06:15
-                                       Fable                                                                7d pace 40/43% ETA -/Sun-11:03
-                                       Go         5h pace 14/40% ETA -/14:03                              · 7d pace 45/14% ETA Thu-16:23/Tue-11:03 · 1mo pace 73/13% ETA 05.11/30.11
-                                       z.ai       5h pace 20/30% ETA -/14:33                              · 7d pace 93/59% ETA Wed-18:27/Sat-08:39
-                                       OpenRouter                              1d pace 31/42% ETA -/01:03 · 7d pace 30/43% ETA -/Sun-11:03
+Opus 5.5 high ctx 12%
+Claude 5h pace 19/40% ETA -/16:04 · 7d pace 24/40% ETA -/Sun-17:52
+Fable                               7d pace 31/40% ETA -/Sun-17:52
 ```
 
-**What you get after install, with no setup:** the Claude row, plus a Fable row when your plan has a Fable weekly
-limit (Max and above). The Go, z.ai and OpenRouter rows appear only when you point the plugin at a windows file you
-keep yourself (see [Windows file](#windows-file-for-fable-go-zai-openrouter)). **Network:** the plugin reads Anthropic's
-subscription usage endpoint every 5 minutes with Claude Code's own login (it never sees the token; option `oauthUsage`).
+On Pro (no Fable limit) the same picture has the Claude row only. One plan row is never padded.
 
-The screenshot stacks several cases, one per selected model: Opus (Claude only), a GLM model with a full windows file
-(Claude, Fable, Go, z.ai and OpenRouter rows), an exhausted 5h window, and Sonnet. In a real session you see one block.
-The wide gap between the `5h` and `7d` columns is the `1d` column, which only the OpenRouter row fills. Times are
-illustrative.
+**Several subscriptions** (Claude, Fable, OpenCode Go, z.ai, OpenRouter, Gemini) from a [windows file](#windows-file-for-other-plans),
+with three sub-agents running:
+
+| A. Plugin |
+| --- |
+| ![plugin, all plans](docs/plugin-all-plans.png) |
+
+| B. Status line |
+| --- |
+| ![status line, all plans](docs/statusline-all-plans.png) |
+
+```
+GLM5.3flash (Go Plus) medium ctx 42%
+Claude     5h pace 38/60% ETA -/15:18                              · 7d pace 19/17% ETA Mon-16:05/Tue-08:30
+Fable                                                                7d pace 40/43% ETA -/Sun-13:18
+Go         5h pace 14/40% ETA -/16:18                              · 7d pace 45/14% ETA Thu-18:38/Tue-13:18 · 1mo pace 73/13% ETA 06.11/30.11
+z.ai       5h pace 20/30% ETA -/16:48                              · 7d pace 93/59% ETA Wed-20:42/Sat-10:54
+OpenRouter                              1d pace 31/42% ETA -/03:18 · 7d pace 30/43% ETA -/Sun-13:18
+Gemini     ok
+agents coder:glm-5.3-flash, explorer:starting x2
+```
+
+The pictures are generated, not screen captures: the rows are the real output of `statusline.py` for
+`examples/max-100.*` and `examples/all-plans.*`; the frame around them (a chat line, the prompt box) is a mock of the
+Claude Code screen, and the times are relative to the moment of the run. The plugin draws the same rows:
+`plugins/statusline-pace/tests/layout-cases.ts` holds both implementations to the same text. Regenerate with
+`python3 scripts/make_screenshot.py` (needs Google Chrome).
+
+## How to read it
 
 | Part | Meaning |
 | --- | --- |
-| `GLM5.3flash (Go Plus) medium ctx 42%` | model name, effort level, and context fill (when enabled) |
-| ` | ` | separator between the head and the Claude windows (row 1 only) |
-| `Claude` / `Fable` / `Go` / `z.ai` / `OpenRouter` | plan label; **bold** for the plan behind the selected model |
-| `5h` / `1d` / `7d` / `1mo` | the rate-limit window (kind order fixed) |
+| `Opus 5.5 high ctx 12%` | line 1: the selected model, effort level, and context fill |
+| `Claude` / `Fable` / `Go` / `z.ai` / `OpenRouter` / `Gemini` | one row per plan, Claude first; **bold** = the plan behind the selected model |
+| `5h` / `1d` / `7d` / `1mo` | the rate-limit window (column order fixed) |
 | `pace 38/60%` | used share of the limit / elapsed share of the window |
 | `ETA 15:20/16:40` | when the limit hits 100% at the current burn / when the window resets |
 | `ETA now/16:40` | the limit is already at 100% (red) |
 | `ETA -/13:03` | at the current burn the limit will not run out before the reset |
 | ` · ` | separator between windows of the same row |
-| red / green | off-pace (red) or on-pace (green) |
+| `ok`, `slow 3.8-flash 5m` | a plan's status text from the windows file (green `ok`, else yellow), for plans without usage numbers |
+| red / green | off pace (red) or on pace (green) |
+| `agents coder:glm-5.3-flash, explorer:starting x2` | last line, dim, only while sub-agents run: type and the model of its last answer (`starting` before the first); a sub-agent counts as running while its transcript was written in the last 120 s |
 
-**Columns are aligned** (monospace): each kind column has the width of its widest cell; a plan's missing kind is spaces.
-The plan label is padded to the longest label among shown rows. Row 1 starts with the head; later rows indent by the same amount.
-With a single row (Claude only) nothing is padded: the line stays compact, e.g. `Opus 5.5 high ctx 4% | Claude 5h pace 7/28% ETA -/14:00 · 7d pace 23/16% ETA Sun-02:48/Tue-08:00`.
+**Columns are aligned** (monospace): each window column has the width of its widest cell; a plan's missing window is
+spaces, so the wide gap between `5h` and `7d` above is the `1d` column that only OpenRouter fills. The plan label is
+padded to the longest label. A single plan row is not padded at all.
 
-**How the ETA is computed.** Linear extrapolation: the used share per elapsed share of the window stays constant,
-so `eta = now + (1 - used) / used * elapsed_time`. No history is stored; it is recomputed from the numbers the router or the engine passes on every refresh.
+**How the ETA is computed.** Linear extrapolation: the used share per elapsed share of the window stays constant, so
+`eta = now + (1 - used) / used * elapsed_time`. No history is stored; it is recomputed on every refresh.
 
 **Off-pace rules** (the same thresholds a pace-aware model router uses to stop sending work to a plan):
 - **5h**: red when used > `max(1.5 × elapsed, 10%)` or used > 75%.
@@ -49,7 +91,7 @@ so `eta = now + (1 - used) / used * elapsed_time`. No history is stored; it is r
 
 ## Install
 
-### As a plugin (one command, no settings edit)
+### A. Plugin: band above the prompt
 
 At the prompt of a Claude Code session in a terminal:
 
@@ -57,44 +99,69 @@ At the prompt of a Claude Code session in a terminal:
 /plugin install statusline-pace --marketplace vespexx/claude-code-statusline-pace
 ```
 
-Answer `y` to add the marketplace, then pick a scope (user scope loads it in every session). A pace band appears **above the prompt**: the model and effort, the plan's pace windows and the run-out ETAs — drawn by the plugin itself, with no `statusLine` setting and no Python.
+Answer `y` to add the marketplace, then pick a scope (user scope loads it in every session). If your Claude Code does
+not know `--marketplace`, run the same from a shell:
 
-From a shell:
 ```
 claude plugin marketplace add vespexx/claude-code-statusline-pace && claude plugin install statusline-pace@statusline-pace
 ```
 
-Remove it: `/plugin uninstall statusline-pace`.
+**Open a new Claude Code session** after installing or updating: a running session does not pick up the new plugin.
+Update later with `claude plugin marketplace update statusline-pace && claude plugin update
+statusline-pace@statusline-pace` and a new session. Remove it with
+`/plugin uninstall statusline-pace`.
 
-The plugin needs a recent Claude Code (it uses the mods API, early access; tested on 2.1.311). It shows rate-limit figures for:
-- **Claude** (Pro/Max subscription): 5h and 7d windows from the engine's rate limits; before the first answer of a session, from the subscription usage endpoint (below), else the windows file.
-- **Fable**: the 7d window from the subscription usage endpoint (its `limits[]`, kind `weekly_scoped`; the endpoint is undocumented and may change, and then the Fable row is simply absent). Claude Code does not pass this window to plugins or the status line ([anthropics/claude-code#93107](https://github.com/anthropics/claude-code/issues/93107)), so the plugin asks `https://api.anthropic.com/api/oauth/usage` itself — the endpoint `/usage` reads — at most every 5 minutes. **In the plugin the token never reaches plugin code:** it calls `$.session.authorize()`, and Claude Code adds its own login header to that one first-party request. With an API key, a gateway or a 3P provider there is no such login and no request. Turn it off with the option `oauthUsage: false`. (The plain status line is different: see its own section; there the Fable row is opt-in and the script itself reads the token.)
-- **OpenCode Go** (Go / Go Plus): 5h, 7d, and 1mo windows from the state file `plans.go`.
-- **z.ai** (GLM via z.ai): 5h and 7d windows from the state file `plans.zai`.
-- **OpenRouter**: from the state file `plans.openrouter`. The windows file decides what each window measures; the author's exporter writes `1d` = free-model requests used today / the daily request limit (a request count, not USD; resets 00:00 UTC) and `7d` = USD spent / the key's weekly budget. The plugin only draws the utilization it is given.
-- The Claude row is shown whatever model is selected; the plan label of the selected model is bold.
+What the plugin shows with no setup: line 1 with the model, then the Claude row (5h and 7d from the engine's rate
+limits) and the Fable row when your plan has a Fable weekly limit. API-key, gateway and 3P users get no rate limits
+from Claude Code and no usage endpoint, so the plugin draws nothing.
 
-**Without a windows file** (`stateFile` empty, the default) you get the Claude row (and the Fable row when your plan has a Fable limit), with no error. The Fable, Go, z.ai, and OpenRouter rows need a JSON file in the shape shown under [Windows file for Fable, Go, z.ai, OpenRouter](#windows-file-for-fable-go-zai-openrouter); no exporter for it is published here, so you write it yourself from the vendors' usage APIs (or leave it off).
+**Network:** for the Fable row the plugin asks `https://api.anthropic.com/api/oauth/usage` — the endpoint `/usage`
+reads — at most every 5 minutes. Claude Code does not pass this window to plugins or the status line
+([anthropics/claude-code#93107](https://github.com/anthropics/claude-code/issues/93107)). **The token never reaches
+plugin code:** the plugin calls `$.session.authorize()`, and Claude Code adds its own login header to that one
+first-party request. The endpoint is undocumented and may change; then the Fable row is simply absent. Turn it off with
+the option `oauthUsage: false`.
 
-**Important:** after installing or updating the plugin, **open a new Claude Code session** — long-lived sessions do not pick up reinstalled plugin rendering.
+#### Plugin options
 
-### Multiple band plugins above the prompt
+Set via `/plugin configure statusline-pace` or in `pluginConfigs` in `settings.json`:
 
-Only one plugin can answer the `ui.render { component: "AbovePrompt" }` hook *without* calling `next(e)`. If a plugin above yours in the chain (alphabetical order within the `user` tier) answers instead of wrapping `next(e)`, the plugins below it never draw.
+| Option | Type | Default | Description |
+| --- | --- | --- | --- |
+| `showModel` | boolean | `true` | Show line 1 (model, effort). |
+| `showContext` | boolean | `false` | Show the context-window fill (`ctx 34%`) on line 1. |
+| `oauthUsage` | boolean | `true` | Read the subscription usage endpoint every 5 minutes (Claude windows, Fable). |
+| `stateFile` | string | `""` | Path to a [windows file](#windows-file-for-other-plans) for the other plans; `~/` expands to `$HOME`. Empty = off. |
 
-The `statusline-pace` plugin **always wraps `next(e)`** so other bands beneath it can coexist. If you do not see the pace band, check whether another plugin (e.g. `quote-reply`) sits above it alphabetically and answers without `next(e)`. Example: the upstream issue [vakovalskii/quote-reply#1](https://github.com/vakovalskii/quote-reply/issues/1) tracks fixing `quote-reply` to call `next(e)`.
-
-The chain order within the `user` tier is alphabetical by plugin name, e.g. `paste-preview` → `quote-reply` → `statusline-pace`. To find the plugin that takes the band, disable the other above-prompt plugins one at a time (`/plugin disable <name>`), open a new session, and see when the pace band comes back.
-
-### The plain status line (any Claude Code, needs Python 3)
-
-Needs Python 3 (stdlib only). It reads the same data sources as the plugin and prints one or more lines to the status bar (Claude Code shows multi-line status line output).
-
-```bash
-curl -fsSL https://raw.githubusercontent.com/vespexx/claude-code-statusline-pace/main/statusline.py -o ~/.claude/statusline-pace.py
+```json
+{
+  "pluginConfigs": {
+    "statusline-pace@statusline-pace": {
+      "options": {
+        "showContext": true,
+        "stateFile": "~/.local/state/subscription-quotas/windows.json"
+      }
+    }
+  }
+}
 ```
 
-Merge this key into your existing `~/.claude/settings.json` (do not replace the file), then restart Claude Code. `statusLine` is a single setting: it **replaces any status line you already have**; to go back, restore your previous `command` (or delete the key). `refreshInterval` (seconds) keeps the ETA current while you are idle:
+**Several bands above the prompt.** The plugin always wraps `next(e)`, so other above-prompt plugins beneath it still
+draw. A plugin above it in the chain (alphabetical within the `user` tier) that answers without `next(e)` hides it; e.g.
+[vakovalskii/quote-reply#1](https://github.com/vakovalskii/quote-reply/issues/1). To find such a plugin, disable the
+others one at a time (`/plugin disable <name>`) and open a new session.
+
+### B. Status line below the prompt
+
+Needs Python 3 (stdlib only). Download the script of the release:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/vespexx/claude-code-statusline-pace/v0.4.0/statusline.py -o ~/.claude/statusline-pace.py
+```
+
+Merge this key into your `~/.claude/settings.json` (do not replace the file), then restart Claude Code. `statusLine` is
+a single setting: it **replaces the status line you have now**; to go back, restore your previous `command`.
+`refreshInterval` (seconds) keeps the ETA current while you are idle:
 
 ```json
 {
@@ -106,112 +173,85 @@ Merge this key into your existing `~/.claude/settings.json` (do not replace the 
 }
 ```
 
-macOS/Linux. On Windows use `python` (or `py`) and a forward-slash absolute path, e.g. `"command": "python C:/Users/you/.claude/statusline-pace.py"`.
+On Windows use `python` (or `py`) and a forward-slash absolute path, e.g.
+`"command": "python C:/Users/you/.claude/statusline-pace.py"`.
 
-**With a windows file** (for Fable, Go, z.ai, OpenRouter rows), set the `PACE_STATE_FILE` env var in the command:
+Options go into the command as env vars, e.g.
+`"command": "PACE_OAUTH=1 PACE_STATE_FILE=~/.local/state/subscription-quotas/windows.json python3 ~/.claude/statusline-pace.py"`:
 
-```json
-{
-  "statusLine": {
-    "type": "command",
-    "command": "PACE_STATE_FILE=~/.local/state/subscription-quotas/windows.json python3 ~/.claude/statusline-pace.py",
-    "refreshInterval": 60
-  }
-}
+- `PACE_OAUTH=1` — the Fable row (opt-in). A status-line command gets no credential handle from Claude Code, so the
+  script reads Claude Code's login itself: the macOS keychain item `Claude Code-credentials` (or
+  `~/.claude/.credentials.json` on Linux). It sends the token only to `api.anthropic.com` (redirects are refused) and
+  caches only the parsed windows (`~/.cache/statusline-pace/oauth-usage.json`, mode 600, 5 minutes), never the token.
+- `PACE_STATE_FILE=<path>` — a [windows file](#windows-file-for-other-plans) for the other plans.
+
+Without a subscription the script prints line 1 (the model) alone; the sub-agents line is added while sub-agents run.
+
+## Windows file for other plans
+
+Go, z.ai, OpenRouter, Gemini (and Fable, when you do not use the usage endpoint) come from a JSON file that some other
+tool keeps fresh. The author runs a private exporter (every 5 minutes) that polls the vendors' usage APIs; any tool
+that writes the same shape works. To write it by hand or from a cron job, use the generator:
+
+```bash
+python3 scripts/make_windows.py --plan go 5h=14%@2026-11-04T18:00 7d=45%@2026-11-09T03:00 \
+  --plan gemini status=ok -o ~/.local/state/subscription-quotas/windows.json
 ```
 
-**Fable row in the plain status line (opt-in):** a status-line command gets no credential handle from Claude Code, so the script can read the usage endpoint only with Claude Code's own login itself. Set `PACE_OAUTH=1` in the command to allow it: the script reads the token from the macOS keychain item `Claude Code-credentials` (or `~/.claude/.credentials.json` on Linux), sends it only to `api.anthropic.com` (redirects are refused), and caches only the parsed windows (`~/.cache/statusline-pace/oauth-usage.json`, mode 600, 5 minutes), never the token. Off by default.
+The shape:
 
-**API-key (non-subscription) users** get no rate limits from Claude Code and no usage endpoint: the plugin draws no band, and the plain status line prints the model head alone.
-
-### Plugin configuration
-
-The plugin accepts these user-configurable options (set via `/plugin configure statusline-pace` or in `pluginConfigs` in `settings.json`):
-
-| Option | Type | Default | Description |
-| --- | --- | --- | --- |
-| `showModel` | boolean | `true` | Show the model name and effort at the start of the band. |
-| `showContext` | boolean | `false` | Show the context-window fill (`ctx 34%`) in the head. |
-| `oauthUsage` | boolean | `true` | Read the subscription usage endpoint every 5 minutes for the Claude windows and the per-model weekly limits (Fable). Claude Code sends its own login; the plugin never sees the token. |
-| `stateFile` | string | `""` | Path to the subscription-quotas exporter state file (`windows.json`) for the Fable (`plans.fable`), Go (`plans.go`), z.ai (`plans.zai`), OpenRouter (`plans.openrouter`) rows and the Claude fallback (`plans.claude` / `subscription`). `~/` expands to `$HOME`. Empty = off. |
-
-Example `settings.json` snippet with a windows file:
 ```json
 {
-  "pluginConfigs": {
-    "statusline-pace@statusline-pace": {
-      "options": {
-        "showModel": true,
-        "showContext": false,
-        "stateFile": "~/.local/state/subscription-quotas/windows.json"
-      }
-    }
-  }
-}
-```
-
-### Windows file for Fable, Go, z.ai, OpenRouter
-
-The Fable (7d), Go (5h / 7d / 1mo), z.ai (5h / 7d), and OpenRouter (1d / 7d) windows come from a JSON file that some other tool keeps fresh. The author uses a private exporter (a launchd job, every 5 minutes, not published) that polls the vendor usage APIs and writes `~/.local/state/subscription-quotas/windows.json`; any tool that writes the same shape works. The file shape:
-```json
-{
-  "updated": <epoch seconds>,
+  "updated": 1793790000,
   "plans": {
-    "claude": {"5h": {"utilization": 0.38, "reset": <epoch>}, "7d": {...}},
-    "fable": {"7d": {"utilization": 0.4, "reset": <epoch>}},
-    "go": {"5h": {...}, "7d": {...}, "1mo": {...}},
-    "zai": {"5h": {...}, "7d": {...}},
-    "openrouter": {"1d": {...}, "7d": {...}}
+    "claude": {"5h": {"utilization": 0.38, "reset": 1793800000}, "7d": {"utilization": 0.19, "reset": 1794300000}},
+    "fable": {"7d": {"utilization": 0.4, "reset": 1794300000}},
+    "go": {"5h": {}, "7d": {}, "1mo": {}},
+    "zai": {"5h": {}, "7d": {}},
+    "openrouter": {"1d": {}, "7d": {}},
+    "gemini": {"status": "ok"}
   }
 }
 ```
-- `utilization` is a 0..1 fraction (e.g., 0.38 = 38% used).
-- `reset` is epoch seconds (UTC) when the window rolls over.
-- A window or plan can be absent.
-- The old router state shape `{"subscription": {"5h": {...}, "7d": {...}}}` still works as the Claude fallback (the plugin and the plain status line both accept it).
-- The plugin reads that file via the `stateFile` option; the plain `statusline.py` in this repo reads the same file via `PACE_STATE_FILE` env var.
 
-**Stale file handling:** when the state has a numeric top-level `updated` and `now - updated > 21600` s (6 hours), the plans from the file are ignored (treated as no data). No `updated` key → the data is used (old router shape).
-
-**Kind `1d` (OpenRouter free daily requests):** length 86400 s, time format `HH:MM` (like `5h`). Off-pace rule = long-window rule (used ≥ 0.9 or used > elapsed + 0.05). Column order of kinds: 5h, 1d, 7d, 1mo.
-
-**Plan row order:** Claude, Fable, Go, z.ai, OpenRouter. Display names: Claude, Fable, Go, z.ai, OpenRouter.
-
-**Plan detection (`plan_of`/`planOf`):** 
-- `fable` when the model id or label contains "fable" (checked before claude).
-- `openrouter` when it contains "openrouter" (checked before claude).
-- `go` for "opencode-go" or label items "Go"/"Go Plus".
-- `zai` for "zai" in id or label item starting with "z.ai".
-- `claude` for "subscription" in label items, or "claude"/"opus"/"sonnet"/"haiku" in id/label.
+- `utilization` is a 0..1 fraction (0.38 = 38% used); `reset` is epoch seconds when the window rolls over.
+- `status` (optional, any plan) is a short text, at most 40 characters: shown after the plan's windows, or alone when
+  the plan has no windows. Green when it is `ok`, else yellow.
+- A window or a plan can be absent. Rows are drawn in the order Claude, Fable, Go, z.ai, OpenRouter, Gemini.
+- What a window measures is up to the writer. The author's exporter writes OpenRouter `1d` = free-model requests used
+  today / the daily request limit (resets 00:00 UTC) and `7d` = USD spent / the key's weekly budget. Gemini's free tier
+  has no usage API, so the author's router writes only a status (`ok`, or `slow <model> <N>m` while a Gemini model
+  answers slowly).
+- **Stale file:** when `now - updated > 21600` s (6 hours), the plans of the file are ignored. No `updated` key = the
+  data is used.
+- Claude's windows come from the engine (stdin `rate_limits` for the status line); the file's `plans.claude` (or the
+  old router shape `{"subscription": {"5h": ..., "7d": ...}}`) is only the fallback before the first answer.
+- The bold plan (the plan behind the selected model) is found by name: `fable` and `openrouter` first, then `gemini`,
+  `go` (`opencode-go`, label `Go` / `Go Plus`), `zai`, then `claude` (`claude`, `opus`, `sonnet`, `haiku`, label
+  `subscription`).
 
 ## Try it without Claude Code
 
-Needs a clone of this repo (the one-file install has no `examples/`):
-
 ```bash
 git clone https://github.com/vespexx/claude-code-statusline-pace && cd claude-code-statusline-pace
-examples/run.sh   # renders examples/*.json with timestamps relative to now; a sibling <name>.state is used as the windows file
+examples/run.sh   # renders examples/*.json; a sibling <name>.state is the windows file
 ```
 
-Or feed your own input; `resets_at` must be a near-future epoch (a 5h window resets within 5 hours):
+Or feed your own input; `resets_at` must be a near-future epoch:
 
 ```bash
 echo "{\"model\":{\"display_name\":\"Opus\"},\"rate_limits\":{\"five_hour\":{\"used_percentage\":60,\"resets_at\":$(( $(date +%s) + 10800 ))}}}" | python3 statusline.py
 ```
 
-Input fields used: `model.display_name`, `model.id`, `effort.level`, `rate_limits.five_hour|seven_day.{used_percentage,resets_at}` (epoch seconds or an ISO-8601 string), `context_window.used_percentage` (number, for ctx in head).
-Missing fields are skipped; the script never raises, so a bad input cannot blank your status bar.
-
-The screenshot is regenerated by `python3 scripts/make_screenshot.py` (needs Google Chrome).
+Input fields used: `model.display_name`, `model.id`, `effort.level`,
+`rate_limits.five_hour|seven_day.{used_percentage,resets_at}` (epoch seconds or ISO-8601),
+`context_window.used_percentage`. Missing fields are skipped; the script never raises, so a bad input cannot blank your
+status bar.
 
 ## Tests
 
 ```bash
 python3 -m unittest discover -s tests
-```
-
-For the plugin:
-```bash
 claude plugin test plugins/statusline-pace
 claude plugin validate plugins/statusline-pace
 ```
@@ -219,9 +259,14 @@ claude plugin validate plugins/statusline-pace
 ## Notes
 
 - The ETA is a straight-line estimate: a burst at the start of a window makes it pessimistic, an idle start optimistic.
-- Times are in the local time zone of the machine running Claude Code. The 7d format uses a fixed English weekday list (Sun..Sat) so it does not depend on the locale.
-- The band wraps to two rows when it does not fit on one line (`flexWrap: wrap`).
-- Keep in sync: `plugins/statusline-pace/hooks/register.tsx` mirrors `statusline.py` function by function (`plan_of`, `short_label`, `off_pace`, `state_windows`, `fmt`).
+- Times are in the local time zone. The 7d format uses a fixed English weekday list (Sun..Sat), not the locale.
+- The plugin band wraps a row that does not fit the terminal width.
+- `plugins/statusline-pace/hooks/register.tsx` mirrors `statusline.py` function by function; the shared
+  `plugins/statusline-pace/tests/layout-cases.ts` (plain JSON after `export default`) fails both test suites when they
+  drift apart.
+- The sub-agents line reads the sub-agent transcripts under `<session transcript folder>/<session id>/subagents/`. The
+  model is the one in the transcript (what really answered, e.g. after a gateway or router changed it). The plugin
+  reads at most every 10 s and cannot read a transcript over 4 MiB (it shows `?` then).
 
 ## License
 
