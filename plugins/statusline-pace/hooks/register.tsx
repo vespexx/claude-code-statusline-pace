@@ -427,7 +427,7 @@ async function pull($: EngineInterface) {
 
 export const register: Register = (on, options) => {
   const showModel = options['showModel'] !== false
-  const showContext = options['showContext'] === true
+  const showContext = options['showContext'] !== false
   const stateFile = typeof options['stateFile'] === 'string' ? options['stateFile'] : ''
   const oauthUsage = options['oauthUsage'] !== false
 

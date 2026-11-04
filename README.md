@@ -9,7 +9,9 @@ line lists the sub-agents running right now and the model each one really answer
 
 ## Two ways to show it
 
-The same rows, drawn by the same rules, in one of two places. Pick one (both at once show the rows twice).
+The same rows, drawn by the same rules, in one of two places. Pick one (both at once show the rows twice): **A** when
+your Claude Code is recent (2.1.311 or later) and you want to keep your own status line; **B** on any older Claude Code,
+or when you want the rows below the prompt.
 
 | | **A. Plugin** (band above the prompt) | **B. Status line** (below the prompt) |
 | --- | --- | --- |
@@ -18,6 +20,9 @@ The same rows, drawn by the same rules, in one of two places. Pick one (both at 
 | Your existing status line | kept | replaced |
 | Fable row (Max $100 and above) | on by default, the plugin never sees the token | opt-in `PACE_OAUTH=1`, the script reads the token itself |
 | Other plans (Go, z.ai, OpenRouter, Gemini) | option `stateFile` | env `PACE_STATE_FILE` |
+
+The text blocks under the pictures are the same examples rendered at another moment, so their clock times differ from
+the pictures.
 
 **Only a Claude subscription** (here Max $100, with its Fable weekly limit), no setup after install:
 
@@ -73,7 +78,7 @@ Claude Code screen, and the times are relative to the moment of the run. The plu
 | `ETA now/16:40` | the limit is already at 100% (red) |
 | `ETA -/13:03` | at the current burn the limit will not run out before the reset |
 | ` · ` | separator between windows of the same row |
-| `ok`, `slow 3.8-flash 5m` | a plan's status text from the windows file (green `ok`, else yellow), for plans without usage numbers |
+| `ok`, `slow 3.8-flash till 13:20` | a plan's status text from the windows file (green `ok`, else yellow), for plans without usage numbers |
 | red / green | off pace (red) or on pace (green) |
 | `agents coder:glm-5.3-flash, explorer:starting x2` | last line, dim, only while sub-agents run: type and the model of its last answer (`starting` before the first); a sub-agent counts as running while its transcript was written in the last 120 s |
 
@@ -129,7 +134,7 @@ Set via `/plugin configure statusline-pace` or in `pluginConfigs` in `settings.j
 | Option | Type | Default | Description |
 | --- | --- | --- | --- |
 | `showModel` | boolean | `true` | Show line 1 (model, effort). |
-| `showContext` | boolean | `false` | Show the context-window fill (`ctx 34%`) on line 1. |
+| `showContext` | boolean | `true` | Show the context-window fill (`ctx 34%`) on line 1. |
 | `oauthUsage` | boolean | `true` | Read the subscription usage endpoint every 5 minutes (Claude windows, Fable). |
 | `stateFile` | string | `""` | Path to a [windows file](#windows-file-for-other-plans) for the other plans; `~/` expands to `$HOME`. Empty = off. |
 
@@ -138,7 +143,6 @@ Set via `/plugin configure statusline-pace` or in `pluginConfigs` in `settings.j
   "pluginConfigs": {
     "statusline-pace@statusline-pace": {
       "options": {
-        "showContext": true,
         "stateFile": "~/.local/state/subscription-quotas/windows.json"
       }
     }
@@ -191,10 +195,11 @@ Without a subscription the script prints line 1 (the model) alone; the sub-agent
 
 Go, z.ai, OpenRouter, Gemini (and Fable, when you do not use the usage endpoint) come from a JSON file that some other
 tool keeps fresh. The author runs a private exporter (every 5 minutes) that polls the vendors' usage APIs; any tool
-that writes the same shape works. To write it by hand or from a cron job, use the generator:
+that writes the same shape works. To write it by hand or from a cron job, use the generator (in a clone of this repo, or download it alone):
 
 ```bash
-python3 scripts/make_windows.py --plan go 5h=14%@2026-11-04T18:00 7d=45%@2026-11-09T03:00 \
+curl -fsSL https://raw.githubusercontent.com/vespexx/claude-code-statusline-pace/v0.4.0/scripts/make_windows.py -o make_windows.py
+python3 make_windows.py --plan go 5h=14%@2026-11-04T18:00 7d=45%@2026-11-09T03:00 \
   --plan gemini status=ok -o ~/.local/state/subscription-quotas/windows.json
 ```
 
@@ -220,7 +225,7 @@ The shape:
 - A window or a plan can be absent. Rows are drawn in the order Claude, Fable, Go, z.ai, OpenRouter, Gemini.
 - What a window measures is up to the writer. The author's exporter writes OpenRouter `1d` = free-model requests used
   today / the daily request limit (resets 00:00 UTC) and `7d` = USD spent / the key's weekly budget. Gemini's free tier
-  has no usage API, so the author's router writes only a status (`ok`, or `slow <model> <N>m` while a Gemini model
+  has no usage API, so the author's router writes only a status (`ok`, or `slow <model> till HH:MM` while a Gemini model
   answers slowly).
 - **Stale file:** when `now - updated > 21600` s (6 hours), the plans of the file are ignored. No `updated` key = the
   data is used.

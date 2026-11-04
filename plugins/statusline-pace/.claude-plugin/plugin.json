@@ -28,7 +28,7 @@
       "type": "boolean",
       "title": "Show context fill",
       "description": "Show the context window fill (ctx 34%) on line 1.",
-      "default": false
+      "default": true
     },
     "stateFile": {
       "type": "string",
