@@ -454,6 +454,17 @@ USAGE = {
 }
 
 
+class CompactSingleRow(unittest.TestCase):
+    def test_one_row_has_no_alignment_padding(self):
+        now = NOW
+        rows = sl.build_rows([("5h", 0.07, now + 3 * 3600), ("7d", 0.23, now + 5 * 86400)], "claude-opus-5-5", "Opus 5.5",
+                             "high", True, True, 4, {}, now)
+        plain = sl.re.sub(r"\x1b\[\d+m", "", rows[0])
+        self.assertEqual(len(rows), 1)
+        self.assertTrue(plain.startswith("Opus 5.5 high ctx 4% | Claude 5h pace 7/"))
+        self.assertNotIn("  ", plain)
+
+
 class Weekday(unittest.TestCase):
     def test_7d_weekday_matches_the_date(self):
         ts = time.mktime((2027, 1, 15, 8, 52, 0, 0, 0, -1))  # a Friday, local time

@@ -37,6 +37,7 @@ illustrative.
 
 **Columns are aligned** (monospace): each kind column has the width of its widest cell; a plan's missing kind is spaces.
 The plan label is padded to the longest label among shown rows. Row 1 starts with the head; later rows indent by the same amount.
+With a single row (Claude only) nothing is padded: the line stays compact, e.g. `Opus 5.5 high ctx 4% | Claude 5h pace 7/28% ETA -/14:00 · 7d pace 23/16% ETA Sun-02:48/Tue-08:00`.
 
 **How the ETA is computed.** Linear extrapolation: the used share per elapsed share of the window stays constant,
 so `eta = now + (1 - used) / used * elapsed_time`. No history is stored; it is recomputed from the numbers the router or the engine passes on every refresh.

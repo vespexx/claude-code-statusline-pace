@@ -635,3 +635,20 @@ test('mergeState: endpoint plans over a stale file, Fable row drawn', () => {
   const rows = bandRows({ effort: '', windows: [], ctx: null }, 'claude-fable-5-1', now, true, false, state)
   expect(rows.map(r => r.map(p => p.text).join(''))[1]!.trimStart().startsWith('Fable')).toBe(true)
 })
+
+test('bandRows: a single row is compact (no alignment padding)', () => {
+  const now = Date.parse('2026-11-04T08:00:00Z')
+  const snap = {
+    effort: 'high',
+    windows: [
+      { kind: '5h' as const, used: 0.07, resetsAt: now + 3 * 3600_000 },
+      { kind: '7d' as const, used: 0.23, resetsAt: now + 5 * 86400_000 },
+    ],
+    ctx: 4,
+  }
+  const rows = bandRows(snap, 'claude-opus-5-5', now, true, true, null)
+  const text = rows[0]!.map(p => p.text).join('')
+  expect(rows.length).toBe(1)
+  expect(text.startsWith('claude-opus-5-5 high ctx 4% | Claude 5h pace 7/')).toBe(true)
+  expect(text.includes('  ')).toBe(false)
+})
