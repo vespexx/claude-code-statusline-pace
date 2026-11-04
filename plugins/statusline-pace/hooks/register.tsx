@@ -4,21 +4,18 @@ import type { EngineInterface, Register, SessionRateLimit } from 'claude-code'
 import type { Kind, Snap, Win } from '../types'
 
 // statusline-pace: the subscription pace as a band above the prompt.
-// `Opus 5.5 high | 5h pace 60/40% ETA 15:00/16:40 · 7d pace 40/17% ETA Fri-08:52/Tue-08:52 · 1mo pace 73/13% ETA 08.11/29.11`
-// pace = used % of the window / elapsed % of the window; ETA = when the limit
-// hits 100% at the burn so far / when the window resets. Linear, like the
-// plain `statusline.py` in this repo: no history is kept; the figures come
-// from the engine, pushed on `session.measure` and pulled at the start.
-// Plan-aware (v0.2): row 1 always shows Claude windows (engine rate limits + state fallback).
-// Rows below: Go and z.ai windows from the state file when present.
-// Keep in sync with statusline.py: plan_of, short_label, off_pace, state_windows.
+// v0.3: aligned columns, ctx in head, 1d kind, fable & openrouter plans.
+// Kind order: 5h, 1d, 7d, 1mo.
+// Plan order: claude, fable, go, zai, openrouter. Claude and per-model weekly limits (Fable) also come from
+// the subscription usage endpoint, read with the engine-held credential (the token never reaches the plugin).
 
 const snap = atom({ plugin: 'statusline-pace', key: 'snap' } as const, null, {
-  shape: 'snap-2',
+  shape: 'snap-3',
 })
 
 const LENGTH: Record<Kind, number> = {
   '5h': 5 * 3600_000,
+  '1d': 86400_000,
   '7d': 7 * 86400_000,
   '1mo': 30 * 86400_000,
 }
@@ -29,15 +26,15 @@ const ENGINE_KINDS: Record<string, Kind> = {
 }
 
 const WEEK = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat']
-const PLAN_TAGS = new Set(['Go', 'Go Plus', 'subscription', 'free tier'])
+const PLAN_TAGS = new Set(['Go', 'Go Plus', 'subscription', 'free tier', 'Fable', 'OpenRouter'])
 
 const pad = (n: number) => String(n).padStart(2, '0')
 
-// 5h shows `HH:MM`, 7d shows `Ddd-HH:MM` (local), 1mo shows `DD.MM` (1-indexed month).
+// 5h/1d show `HH:MM`, 7d shows `Ddd-HH:MM` (local), 1mo shows `DD.MM` (1-indexed month).
 // Callers guard that `ms` is finite.
 export function fmt(kind: Kind, ms: number): string {
   const d = new Date(ms)
-  if (kind === '5h') {
+  if (kind === '5h' || kind === '1d') {
     return `${pad(d.getHours())}:${pad(d.getMinutes())}`
   }
   if (kind === '7d') {
@@ -71,11 +68,19 @@ export function labelItems(label: string): [string, string[]] {
 }
 
 // Mirrors statusline.py plan_of: takes the whole /model entry string.
-// Returns 'claude', 'go', 'zai', or ''.
-export function planOf(model: string): 'claude' | 'go' | 'zai' | '' {
+// Returns 'claude', 'fable', 'go', 'zai', 'openrouter', or ''.
+export function planOf(model: string): 'claude' | 'fable' | 'go' | 'zai' | 'openrouter' | '' {
   const s = model.toLowerCase()
   const [, items] = labelItems(model)
   const itemSet = new Set(items)
+  // fable check before claude
+  if (s.includes('fable') || itemSet.has('Fable')) {
+    return 'fable'
+  }
+  // openrouter check before claude
+  if (s.includes('openrouter') || itemSet.has('OpenRouter')) {
+    return 'openrouter'
+  }
   if (s.includes('opencode-go') || itemSet.has('Go') || itemSet.has('Go Plus')) {
     return 'go'
   }
@@ -106,9 +111,9 @@ function isStateStale(state: unknown, now: number = Date.now()): boolean {
   return now - updated * 1000 > STALE_THRESHOLD_MS
 }
 
-// Mirrors statusline.py state_windows. Supports 'claude', 'go', 'zai'.
+// Mirrors statusline.py state_windows. Supports 'claude', 'fable', 'go', 'zai', 'openrouter'.
 // Stale file (updated > 6h ago) is treated as no data.
-export function stateWins(state: unknown, plan: 'go' | 'claude' | 'zai', now: number = Date.now()): Win[] {
+export function stateWins(state: unknown, plan: 'claude' | 'fable' | 'go' | 'zai' | 'openrouter', now: number = Date.now()): Win[] {
   if (typeof state !== 'object' || state === null) return []
   if (isStateStale(state, now)) return []
   const stateObj = state as Record<string, unknown>
@@ -130,7 +135,7 @@ export function stateWins(state: unknown, plan: 'go' | 'claude' | 'zai', now: nu
 
 function extractWins(src: Record<string, unknown>): Win[] {
   const out: Win[] = []
-  const order: Kind[] = ['5h', '7d', '1mo']
+  const order: Kind[] = ['5h', '1d', '7d', '1mo']
   for (const kind of order) {
     const x = src[kind]
     if (typeof x !== 'object' || x === null) continue
@@ -146,7 +151,7 @@ function extractWins(src: Record<string, unknown>): Win[] {
 
 // Mirrors statusline.py off_pace.
 // 5h: used > max(1.5 * elapsed, 0.1) or used > 0.75
-// 7d/1mo: used >= 0.9 OR used > elapsed + 0.05
+// 1d/7d/1mo: used >= 0.9 OR used > elapsed + 0.05
 export function offPace(kind: Kind, util: number, frac: number): boolean {
   if (kind === '5h') {
     return util > Math.max(1.5 * frac, 0.1) || util > 0.75
@@ -170,22 +175,17 @@ export function oneWin(win: Win, now: number) {
 
 type Part = { text: string; color?: string; dim?: boolean; bold?: boolean }
 
-const PLAN_NAME = { claude: 'Claude', go: 'Go', zai: 'z.ai' } as const
-const OTHER_PLANS = ['go', 'zai'] as const
+const PLAN_NAME = { claude: 'Claude', fable: 'Fable', go: 'Go', zai: 'z.ai', openrouter: 'OpenRouter' } as const
+const PLAN_ORDER = ['claude', 'fable', 'go', 'zai', 'openrouter'] as const
+const KIND_ORDER: Kind[] = ['5h', '1d', '7d', '1mo']
 
-// `<Plan> 5h pace … · 7d pace …`; the plan of the selected model is bold.
-function planParts(plan: keyof typeof PLAN_NAME, wins: Win[], current: string, now: number): Part[] {
-  const parts: Part[] = [{ text: PLAN_NAME[plan], bold: plan === current }]
-  wins.forEach((w, i) => {
-    parts.push({ text: i === 0 ? ' ' : ' · ', dim: true })
-    parts.push(oneWin(w, now))
-  })
-  return parts
-}
-
-// The band as rows of parts. Row 1: the model head, then the Claude windows
-// (engine rate limits, else the state file), then ctx. Rows below: Go and
-// z.ai from the state file, one row per plan with data.
+// The band as aligned rows of parts. Row 1 starts with the head
+// (`<model> <effort> ctx N%` + ' | '); later rows are indented to the same
+// column. Each row: the plan label padded to the longest one, then one
+// column per kind (5h, 1d, 7d, 1mo) that any row has, each as wide as its
+// longest cell. A gap of 3 before every column but the first: ' · ' when
+// the row has this cell and an earlier one, else spaces. Claude windows come
+// from the engine, else the file; the other plans only from the file.
 export function bandRows(
   s: Snap | null,
   model: string,
@@ -196,21 +196,105 @@ export function bandRows(
 ): Part[][] {
   const current = planOf(model)
   const engine = s?.windows ?? []
-  const claude = engine.length > 0 ? engine : stateWins(state, 'claude', now)
-  const others = OTHER_PLANS.map(plan => planParts(plan, stateWins(state, plan, now), current, now))
-    .filter(parts => parts.length > 1)
-  const ctx = showContext && s !== null && s.ctx !== null ? s.ctx : null
-
-  const row1: Part[] = []
-  if (claude.length > 0) row1.push(...planParts('claude', claude, current, now))
-  if (ctx !== null) row1.push({ text: `${row1.length > 0 ? ' ' : ''}ctx ${Math.round(ctx)}%`, dim: true })
+  const plans = PLAN_ORDER
+    .map(plan => ({ plan, wins: plan === 'claude' && engine.length > 0 ? engine : stateWins(state, plan, now) }))
+    .filter(r => r.wins.length > 0)
+  const ctx = showContext && s !== null && s.ctx !== null ? ` ctx ${Math.round(s.ctx)}%` : ''
   const short = shortLabel(model)
   const effort = s?.effort ?? ''
-  const head = `${short}${short !== '' && effort !== '' ? ' ' + effort : ''}`
-  if (showModel && head !== '' && (row1.length > 0 || others.length > 0)) {
-    row1.unshift({ text: head }, ...(row1.length > 0 ? [{ text: ' | ', dim: true }] : []))
+  const head = showModel && short !== '' ? `${short}${effort !== '' ? ' ' + effort : ''}${ctx}` : ''
+  if (plans.length === 0) return head !== '' && ctx !== '' ? [[{ text: head }]] : []
+
+  const cells = plans.map(r => new Map(r.wins.map(w => [w.kind, oneWin(w, now)])))
+  const kinds = KIND_ORDER.filter(k => cells.some(c => c.has(k)))
+  const width = new Map(kinds.map(k => [k, Math.max(...cells.map(c => c.get(k)?.text.length ?? 0))]))
+  const labelWidth = Math.max(...plans.map(r => PLAN_NAME[r.plan].length))
+  const prefix = head !== '' ? head + ' | ' : ''
+
+  return plans.map((r, i) => {
+    const parts: Part[] = [
+      { text: i === 0 ? prefix : ' '.repeat(prefix.length) },
+      { text: PLAN_NAME[r.plan], bold: r.plan === current },
+      { text: ' '.repeat(labelWidth - PLAN_NAME[r.plan].length + 1) },
+    ]
+    let seen = false
+    kinds.forEach((k, ki) => {
+      const cell = cells[i]!.get(k)
+      if (ki > 0) parts.push({ text: cell !== undefined && seen ? ' · ' : '   ', dim: true })
+      parts.push(cell ?? { text: '' }, { text: ' '.repeat(width.get(k)! - (cell?.text.length ?? 0)) })
+      if (cell !== undefined) seen = true
+    })
+    return trimRow(parts)
+  })
+}
+
+// Drop trailing spaces and empty parts so a row ends at its last cell.
+function trimRow(parts: Part[]): Part[] {
+  const out = parts.filter(p => p.text !== '')
+  while (out.length > 0 && out[out.length - 1]!.text.trim() === '') out.pop()
+  return out
+}
+
+type Plans = Record<string, Record<string, { utilization: number; reset: number }>>
+
+// The windows of Anthropic's subscription usage endpoint (the one /usage
+// reads): `five_hour` / `seven_day` -> claude 5h/7d, and each per-model
+// weekly limit (`limits[]`, kind `weekly_scoped`, e.g. Fable) -> a plan named
+// after the model. Utilization 0..1, reset epoch seconds, as in the file.
+export function oauthPlans(body: unknown): Plans {
+  const out: Plans = {}
+  if (typeof body !== 'object' || body === null) return out
+  const b = body as Record<string, unknown>
+  const put = (plan: string, kind: Kind, percent: unknown, resetsAt: unknown) => {
+    const reset = typeof resetsAt === 'string' ? Date.parse(resetsAt) / 1000 : NaN
+    if (typeof percent !== 'number' || !Number.isFinite(percent) || !Number.isFinite(reset)) return
+    out[plan] = { ...out[plan], [kind]: { utilization: Math.max(0, percent) / 100, reset } }
   }
-  return row1.length > 0 ? [row1, ...others] : others
+  for (const [key, kind] of [['five_hour', '5h'], ['seven_day', '7d']] as const) {
+    const w = b[key] as Record<string, unknown> | null | undefined
+    if (w) put('claude', kind, w.utilization, w.resets_at)
+  }
+  for (const l of Array.isArray(b.limits) ? b.limits : []) {
+    const name = (l as { scope?: { model?: { display_name?: unknown } } })?.scope?.model?.display_name
+    if ((l as { kind?: unknown }).kind === 'weekly_scoped' && typeof name === 'string') {
+      put(name.toLowerCase(), '7d', (l as { percent?: unknown }).percent, (l as { resets_at?: unknown }).resets_at)
+    }
+  }
+  return out
+}
+
+// The windows file with the endpoint's plans laid over it. A stale file
+// keeps no plans of its own; the endpoint's are fresh by construction.
+export function mergeState(file: unknown, oauth: Plans, now: number): unknown {
+  if (Object.keys(oauth).length === 0) return file
+  const f = typeof file === 'object' && file !== null && !isStateStale(file, now) ? file as Record<string, unknown> : {}
+  const plans = typeof f.plans === 'object' && f.plans !== null ? f.plans as Plans : {}
+  return { ...f, updated: now / 1000, plans: { ...plans, ...oauth } }
+}
+
+// The endpoint, at most every 5 minutes. The engine holds the credential and
+// sets the header itself (`$.session.authorize`): the token never reaches
+// this plugin. No first-party login (API key, gateway, 3P) -> no plans.
+let oauthCache: { at: number; got: number; plans: Plans } = { at: 0, got: 0, plans: {} }
+
+async function readOauth($: EngineInterface): Promise<Plans> {
+  const now = Date.now()
+  if (now - oauthCache.at >= 300_000) {
+    oauthCache.at = now
+    try {
+      const auth = await $.session.authorize()
+      if (auth !== null && auth.kind === 'bearer') {
+        const r = await $.http.fetch('https://api.anthropic.com/api/oauth/usage', {
+          auth: auth.handle,
+          headers: { 'anthropic-beta': 'oauth-2025-04-20' },
+        })
+        const plans = r.ok ? oauthPlans(JSON.parse(r.text)) : {}
+        if (Object.keys(plans).length > 0) oauthCache = { at: now, got: now, plans }
+      }
+    } catch { /* keep the last good answer */ }
+  }
+  // A failed or empty answer keeps the last good plans while they are younger than the stale limit.
+  return now - oauthCache.got <= STALE_THRESHOLD_MS ? oauthCache.plans : {}
 }
 
 // Cache state file read for 30s.
@@ -251,6 +335,7 @@ export const register: Register = (on, options) => {
   const showModel = options['showModel'] !== false
   const showContext = options['showContext'] === true
   const stateFile = typeof options['stateFile'] === 'string' ? options['stateFile'] : ''
+  const oauthUsage = options['oauthUsage'] !== false
 
   on('session.start', async ($, e, next) => {
     try { await pull($) } catch { /* ignore */ }
@@ -284,13 +369,10 @@ export const register: Register = (on, options) => {
 
     const model = await $.session.model().catch(() => '')
 
-    // Read state file once
-    let state: unknown = null
-    if (stateFile !== '') {
-      state = await readStateFile($, stateFile)
-    }
-
-    const rows = bandRows(s, model, Date.now(), showModel, showContext, state)
+    const now = Date.now()
+    const file = stateFile !== '' ? await readStateFile($, stateFile) : null
+    const state = mergeState(file, oauthUsage ? await readOauth($) : {}, now)
+    const rows = bandRows(s, model, now, showModel, showContext, state)
     if (rows.length === 0) return next(e)
 
     const { Box, Text } = $.ui.resolve(e)

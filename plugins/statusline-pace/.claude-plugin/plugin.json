@@ -1,12 +1,21 @@
 {
   "name": "statusline-pace",
-  "version": "0.2.0",
-  "description": "A pace band above the prompt: Claude 5h/7d windows on row 1 for any model, OpenCode Go and z.ai windows on the rows below, with run-out and reset ETAs.",
-  "author": { "name": "vespexx", "url": "https://github.com/vespexx" },
+  "version": "0.3.0",
+  "description": "A pace band above the prompt: aligned columns for 5h/1d/7d/1mo, ctx in the head, and rows for Claude, Fable, Go, z.ai, OpenRouter plans.",
+  "author": {
+    "name": "vespexx",
+    "url": "https://github.com/vespexx"
+  },
   "homepage": "https://github.com/vespexx/claude-code-statusline-pace",
   "repository": "https://github.com/vespexx/claude-code-statusline-pace",
   "license": "MIT",
-  "keywords": ["status line", "rate limits", "subscription", "pace", "eta"],
+  "keywords": [
+    "status line",
+    "rate limits",
+    "subscription",
+    "pace",
+    "eta"
+  ],
   "types": "./types/index.d.ts",
   "userConfig": {
     "showModel": {
@@ -18,14 +27,20 @@
     "showContext": {
       "type": "boolean",
       "title": "Show context fill",
-      "description": "Show the context window fill (ctx 34%) after the windows on row 1.",
+      "description": "Show the context window fill (ctx 34%) in the head.",
       "default": false
     },
     "stateFile": {
       "type": "string",
       "title": "Plan state file",
-      "description": "Path to a windows.json for the Go (plans.go) and z.ai (plans.zai) rows and the Claude fallback (plans.claude or subscription); ~ allowed. Empty = off.",
+      "description": "Path to a windows.json for the Fable (plans.fable), Go (plans.go), z.ai (plans.zai), OpenRouter (plans.openrouter) rows and the Claude fallback (plans.claude or subscription); ~ allowed. Empty = off.",
       "default": ""
+    },
+    "oauthUsage": {
+      "type": "boolean",
+      "title": "Read the subscription usage endpoint",
+      "description": "Every 5 minutes, ask api.anthropic.com/api/oauth/usage (the data /usage shows) for the Claude 5h/7d windows and the per-model weekly limits (Fable). Claude Code sends its own login; the plugin never sees the token. Off = engine rate limits and the windows file only.",
+      "default": true
     }
   }
 }

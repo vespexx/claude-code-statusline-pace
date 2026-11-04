@@ -5,7 +5,7 @@
     {
       "name": "statusline-pace",
       "source": "./plugins/statusline-pace",
-      "description": "A pace band above the prompt: model, effort, and when the 5h / 7d subscription windows run out at the current burn."
+      "description": "A pace band above the prompt: aligned columns for 5h/1d/7d/1mo, ctx in the head, and rows for Claude, Fable, Go, z.ai, OpenRouter plans."
     }
   ],
   "description": "claude-code-statusline-pace: the subscription pace, as a plugin (a band above the prompt) or as a plain status-line command."
