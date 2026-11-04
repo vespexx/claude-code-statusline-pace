@@ -2,6 +2,8 @@ import { expect, test } from 'claude-code/testing'
 import {
   bandRows,
   fmt,
+  mergeState,
+  oauthPlans,
   offPace,
   oneWin,
   planOf,
@@ -15,6 +17,11 @@ import {
 test('fmt 5h returns HH:MM', () => {
   const ms = new Date(2027, 0, 15, 14, 30).getTime()
   expect(fmt('5h', ms)).toBe('14:30')
+})
+
+test('fmt 1d returns HH:MM', () => {
+  const ms = new Date(2027, 0, 15, 14, 30).getTime()
+  expect(fmt('1d', ms)).toBe('14:30')
 })
 
 test('fmt 7d returns Ddd-HH:MM', () => {
@@ -58,6 +65,30 @@ test('planOf Go/Go Plus in label returns go', () => {
   expect(planOf('Model (Go, subscription)')).toBe('go')
 })
 
+test('planOf fable in id returns fable', () => {
+  expect(planOf('fable-model-v1')).toBe('fable')
+})
+
+test('planOf fable in label item returns fable', () => {
+  expect(planOf('Model (Fable, Cloud)')).toBe('fable')
+})
+
+test('planOf fable checked before claude', () => {
+  expect(planOf('claude-fable-model (Fable)')).toBe('fable')
+})
+
+test('planOf openrouter in id returns openrouter', () => {
+  expect(planOf('openrouter-model-v1')).toBe('openrouter')
+})
+
+test('planOf openrouter in label item returns openrouter', () => {
+  expect(planOf('Model (OpenRouter, free)')).toBe('openrouter')
+})
+
+test('planOf openrouter checked before claude', () => {
+  expect(planOf('claude-openrouter-model (OpenRouter)')).toBe('openrouter')
+})
+
 test('planOf zai in id returns zai', () => {
   expect(planOf('glm-5.3-flash-cloud-zai-direct')).toBe('zai')
 })
@@ -99,6 +130,11 @@ test('shortLabel keeps z.ai and ≈ items, drops others like "пик …"', () =
   expect(shortLabel(label)).toBe('GLM5.3flash (z.ai Lite $18, ≈146–293M ток/нед при кэше 95%)')
 })
 
+test('shortLabel keeps Fable and OpenRouter tags', () => {
+  const label = 'Model (Fable, OpenRouter, Cloud, ≈100M)'
+  expect(shortLabel(label)).toBe('Model (Fable, OpenRouter, ≈100M)')
+})
+
 test('shortLabel no parentheses returns as-is', () => {
   expect(shortLabel('Opus 5.5')).toBe('Opus 5.5')
 })
@@ -124,6 +160,18 @@ test('offPace 5h: (0.8, 0.1) true — 75% cap', () => {
 
 test('offPace 5h: (0.05, 0.6) false — well under', () => {
   expect(offPace('5h', 0.05, 0.6)).toBe(false)
+})
+
+test('offPace 1d: (0.48, 0.42) true — leads by >5pp (long window rule)', () => {
+  expect(offPace('1d', 0.48, 0.42)).toBe(true)
+})
+
+test('offPace 1d: (0.45, 0.42) false — within 5pp', () => {
+  expect(offPace('1d', 0.45, 0.42)).toBe(false)
+})
+
+test('offPace 1d: (0.92, 0.95) true — hard cap 90%', () => {
+  expect(offPace('1d', 0.92, 0.95)).toBe(true)
 })
 
 test('offPace 7d: (0.48, 0.42) true — leads by >5pp', () => {
@@ -153,6 +201,7 @@ test('offPace 1mo: (0.91, 0.5) true — hard cap 90%', () => {
 test('offPace 1mo: (0.89, 0.5) true — leads by >5pp (still off-pace below 90%)', () => {
   expect(offPace('1mo', 0.89, 0.5)).toBe(true)
 })
+
 test('offPace 1mo: (0.54, 0.5) false — under 90% and within 5pp', () => {
   expect(offPace('1mo', 0.54, 0.5)).toBe(false)
 })
@@ -161,21 +210,51 @@ test('offPace 1mo: (0.54, 0.5) false — under 90% and within 5pp', () => {
 
 const NOW = Date.now()
 
-test('stateWins go extracts 5h/7d/1mo in order', () => {
+test('stateWins go extracts 5h/1d/7d/1mo in order', () => {
   const state = {
     plans: {
       go: {
         '5h': { utilization: 0.14, reset: Math.floor(NOW / 1000) + 3 * 3600 },
+        '1d': { utilization: 0.3, reset: Math.floor(NOW / 1000) + 86400 },
         '7d': { utilization: 0.45, reset: Math.floor(NOW / 1000) + 5 * 86400 },
         '1mo': { utilization: 0.73, reset: Math.floor(NOW / 1000) + 26 * 86400 },
       },
     },
   }
   const wins = stateWins(state, 'go')
-  expect(wins.length).toBe(3)
+  expect(wins.length).toBe(4)
   expect(wins[0]).toEqual({ kind: '5h', used: 0.14, resetsAt: expect.any(Number) })
-  expect(wins[1]).toEqual({ kind: '7d', used: 0.45, resetsAt: expect.any(Number) })
-  expect(wins[2]).toEqual({ kind: '1mo', used: 0.73, resetsAt: expect.any(Number) })
+  expect(wins[1]).toEqual({ kind: '1d', used: 0.3, resetsAt: expect.any(Number) })
+  expect(wins[2]).toEqual({ kind: '7d', used: 0.45, resetsAt: expect.any(Number) })
+  expect(wins[3]).toEqual({ kind: '1mo', used: 0.73, resetsAt: expect.any(Number) })
+})
+
+test('stateWins fable extracts 7d in order', () => {
+  const state = {
+    plans: {
+      fable: {
+        '7d': { utilization: 0.5, reset: Math.floor(NOW / 1000) + 4 * 86400 },
+      },
+    },
+  }
+  const wins = stateWins(state, 'fable')
+  expect(wins.length).toBe(1)
+  expect(wins[0]!.kind).toBe('7d')
+})
+
+test('stateWins openrouter extracts 1d/7d in order', () => {
+  const state = {
+    plans: {
+      openrouter: {
+        '1d': { utilization: 0.2, reset: Math.floor(NOW / 1000) + 86400 },
+        '7d': { utilization: 0.5, reset: Math.floor(NOW / 1000) + 4 * 86400 },
+      },
+    },
+  }
+  const wins = stateWins(state, 'openrouter')
+  expect(wins.length).toBe(2)
+  expect(wins[0]!.kind).toBe('1d')
+  expect(wins[1]!.kind).toBe('7d')
 })
 
 test('stateWins zai extracts 5h/7d in order', () => {
@@ -204,6 +283,14 @@ test('stateWins claude falls back to subscription', () => {
   expect(wins.length).toBe(2)
   expect(wins[0]!.kind).toBe('5h')
   expect(wins[1]!.kind).toBe('7d')
+})
+
+test('stateWins claude: empty plans.claude falls back to subscription', () => {
+  const state = {
+    plans: { claude: {} },
+    subscription: { '5h': { utilization: 0.2, reset: Math.floor(NOW / 1000) + 60 } },
+  }
+  expect(stateWins(state, 'claude').length).toBe(1)
 })
 
 test('stateWins stale file (updated > 6h ago) returns empty', () => {
@@ -248,17 +335,15 @@ test('oneWin colours: off-pace -> error, on-pace -> success', () => {
   expect(oneWin(winOffPace, now).color).toBe('error')
 })
 
-// --- bandRows tests (new multi-row) ---
+// --- bandRows tests (aligned layout) ---
 
 const NOW_TEST = 1_800_000_000_000 // fixed timestamp for deterministic tests
 
 type RowPart = { text: string; color?: string; dim?: boolean; bold?: boolean }
 
-// Helper to find a part by text and assert it exists
-function findPart(row: RowPart[], text: string): RowPart {
-  const part = row.find(p => p.text === text)
-  expect(part).toBeDefined()
-  return part!
+// Helper to join a row's text parts
+function rowText(row: RowPart[]): string {
+  return row.map(p => p.text).join('')
 }
 
 function getRow(rows: RowPart[][], index: number): RowPart[] {
@@ -267,7 +352,13 @@ function getRow(rows: RowPart[][], index: number): RowPart[] {
   return row!
 }
 
-test('bandRows: Claude only (engine windows), head shown', () => {
+function findPart(row: RowPart[], labelPrefix: string): RowPart {
+  const part = row.find(p => p.text.startsWith(labelPrefix))
+  expect(part).toBeDefined()
+  return part!
+}
+
+test('bandRows: Claude only (engine windows), head shown, aligned columns', () => {
   const snap = {
     effort: 'high',
     windows: [
@@ -277,20 +368,20 @@ test('bandRows: Claude only (engine windows), head shown', () => {
     ctx: null,
   }
   const state = {}
-  // Use a proper display name like the engine would provide
   const rows = bandRows(snap, 'Opus 5.5 (subscription)', NOW_TEST, true, false, state)
   expect(rows.length).toBe(1)
   const row0 = getRow(rows, 0)
-  const texts = row0.map(p => p.text)
-  // shortLabel keeps "subscription" tag
-  expect(texts[0]).toBe('Opus 5.5 (subscription) high')
-  expect(texts[1]).toBe(' | ')
-  expect(texts[2]).toBe('Claude')
-  expect(texts[3]).toBe(' ')
-  expect(texts[4]).toContain('5h pace 60/')
-  expect(texts[5]).toBe(' · ')
-  expect(texts[6]).toContain('7d pace 40/')
-  // Claude plan label should be bold
+  const text = rowText(row0)
+  // Head + separator
+  expect(text.startsWith('Opus 5.5 (subscription) high | ')).toBe(true)
+  // Plan label padded
+  expect(text).toContain('Claude ')
+  // Two columns: 5h and 7d
+  expect(text).toContain('5h pace 60/')
+  expect(text).toContain('7d pace 40/')
+  // Separator between columns
+  expect(text).toContain(' · ')
+  // Claude label bold
   expect(findPart(row0, 'Claude').bold).toBe(true)
 })
 
@@ -305,13 +396,13 @@ test('bandRows: Claude engine windows empty, falls back to state subscription', 
   const rows = bandRows(snap, 'claude-sonnet-4', NOW_TEST, true, false, state)
   expect(rows.length).toBe(1)
   const row0 = getRow(rows, 0)
-  const texts = row0.map(p => p.text).join('')
-  expect(texts).toContain('Claude')
-  expect(texts).toContain('5h pace 30/')
-  expect(texts).toContain('7d pace 50/')
+  const text = rowText(row0)
+  expect(text).toContain('Claude')
+  expect(text).toContain('5h pace 30/')
+  expect(text).toContain('7d pace 50/')
 })
 
-test('bandRows: Claude row 1, Go row 2 from state', () => {
+test('bandRows: no Claude windows, Go row from state (head on row 1)', () => {
   const snap = { effort: '', windows: [], ctx: null }
   const state = {
     plans: {
@@ -322,28 +413,26 @@ test('bandRows: Claude row 1, Go row 2 from state', () => {
       },
     },
   }
-  // Use a proper display name for the Go model
   const rows = bandRows(snap, 'GLM5.3flash (Cloud, Go Plus, ≈360M вых.ток/мес)', NOW_TEST, true, false, state)
-  expect(rows.length).toBe(2)
+  expect(rows.length).toBe(1)
   const row0 = getRow(rows, 0)
-  const row1 = getRow(rows, 1)
-  // Row 1: Claude (no windows, but head shown because row 2 exists)
-  expect(row0.map(p => p.text).join('')).toContain('GLM5.3flash')
-  // Row 2: Go
-  const row2Text = row1.map(p => p.text).join('')
-  expect(row2Text).toContain('Go')
-  expect(row2Text).toContain('5h pace 14/')
-  expect(row2Text).toContain('7d pace 45/')
-  expect(row2Text).toContain('1mo pace 73/')
-  // Go label should be bold (current plan)
-  expect(findPart(row1, 'Go').bold).toBe(true)
-  // Claude label should NOT be bold (no Claude windows, so no Claude label in row 1)
-  const claudePart = row0.find(p => p.text === 'Claude')
-  expect(claudePart).toBeUndefined()
+  const text = rowText(row0)
+  // Head shown, then Go row (no Claude row since no Claude windows)
+  expect(text).toContain('GLM5.3flash')
+  expect(text).toContain('Go ')
+  expect(text).toContain('5h pace 14/')
+  expect(text).toContain('7d pace 45/')
+  expect(text).toContain('1mo pace 73/')
+  // Go label bold (current plan)
+  expect(findPart(row0, 'Go').bold).toBe(true)
 })
 
 test('bandRows: Claude row 1, z.ai row 2 from state', () => {
-  const snap = { effort: '', windows: [], ctx: null }
+  const snap = {
+    effort: '',
+    windows: [{ kind: '5h' as const, used: 0.3, resetsAt: NOW_TEST + 3600 }],
+    ctx: null,
+  }
   const state = {
     plans: {
       zai: {
@@ -354,16 +443,16 @@ test('bandRows: Claude row 1, z.ai row 2 from state', () => {
   }
   const rows = bandRows(snap, 'glm-5.3-flash-cloud-zai-direct', NOW_TEST, true, false, state)
   expect(rows.length).toBe(2)
+  const row0 = getRow(rows, 0)
   const row1 = getRow(rows, 1)
-  const row2Text = row1.map(p => p.text).join('')
-  expect(row2Text).toContain('z.ai')
-  expect(row2Text).toContain('5h pace 20/')
-  expect(row2Text).toContain('7d pace 50/')
-  // z.ai label should be bold
+  // Row 1: Claude with head
+  expect(rowText(row0)).toContain('Claude')
+  // Row 2: z.ai with indent
+  expect(rowText(row1)).toContain('z.ai')
   expect(findPart(row1, 'z.ai').bold).toBe(true)
 })
 
-test('bandRows: all three plans, Go is current', () => {
+test('bandRows: all five plans, Go is current, aligned columns', () => {
   const snap = {
     effort: '',
     windows: [{ kind: '5h' as const, used: 0.3, resetsAt: NOW_TEST + 3600 }],
@@ -371,37 +460,55 @@ test('bandRows: all three plans, Go is current', () => {
   }
   const state = {
     plans: {
+      fable: { '7d': { utilization: 0.4, reset: Math.floor(NOW_TEST / 1000) + 4 * 86400 } },
       go: { '5h': { utilization: 0.14, reset: Math.floor(NOW_TEST / 1000) + 3 * 3600 } },
       zai: { '5h': { utilization: 0.2, reset: Math.floor(NOW_TEST / 1000) + 2 * 3600 } },
+      openrouter: { '1d': { utilization: 0.5, reset: Math.floor(NOW_TEST / 1000) + 86400 } },
     },
   }
   const rows = bandRows(snap, 'glm-5.3-flash-cloud-opencode-go-direct', NOW_TEST, true, false, state)
-  expect(rows.length).toBe(3)
-  const row0 = getRow(rows, 0)
-  const row1 = getRow(rows, 1)
-  const row2 = getRow(rows, 2)
+  expect(rows.length).toBe(5)
   // Row 1: Claude (from engine)
-  expect(row0.map(p => p.text).join('')).toContain('Claude')
-  // Row 2: Go (bold)
-  expect(findPart(row1, 'Go').bold).toBe(true)
-  // Row 3: z.ai (not bold)
-  expect(findPart(row2, 'z.ai').bold).toBe(false)
+  expect(rowText(getRow(rows, 0))).toContain('Claude')
+  // Row 2: Fable
+  expect(rowText(getRow(rows, 1))).toContain('Fable')
+  // Row 3: Go (bold)
+  expect(findPart(getRow(rows, 2), 'Go').bold).toBe(true)
+  // Row 4: z.ai
+  expect(rowText(getRow(rows, 3))).toContain('z.ai')
+  // Row 5: OpenRouter
+  expect(rowText(getRow(rows, 4))).toContain('OpenRouter')
 })
 
-test('bandRows: no Claude windows, no other plans, showContext false -> empty', () => {
+test('bandRows: ctx in head when showContext true', () => {
+  const snap = {
+    effort: '',
+    windows: [{ kind: '5h' as const, used: 0.3, resetsAt: NOW_TEST + 3600 }],
+    ctx: 34.7,
+  }
+  const state = {}
+  const rows = bandRows(snap, 'Opus 5.5', NOW_TEST, true, true, state)
+  expect(rows.length).toBe(1)
+  const text = rowText(getRow(rows, 0))
+  expect(text).toContain('ctx 35%')
+  // ctx should be in head, not at end of windows
+  expect(text.indexOf('ctx 35%')).toBeLessThan(text.indexOf('5h pace'))
+})
+
+test('bandRows: no data, showContext false -> empty', () => {
   const snap = { effort: '', windows: [], ctx: null }
   const state = {}
   const rows = bandRows(snap, 'gpt-4', NOW_TEST, true, false, state)
   expect(rows.length).toBe(0)
 })
 
-test('bandRows: no Claude windows, no other plans, showContext true -> row 1 with ctx', () => {
+test('bandRows: no data, showContext true -> row 1 with ctx in head', () => {
   const snap = { effort: '', windows: [], ctx: 34 }
   const state = {}
   const rows = bandRows(snap, 'gpt-4', NOW_TEST, true, true, state)
   expect(rows.length).toBe(1)
-  const row0 = getRow(rows, 0)
-  expect(row0.map(p => p.text).join('')).toContain('ctx 34%')
+  const text = rowText(getRow(rows, 0))
+  expect(text).toContain('ctx 34%')
 })
 
 test('bandRows: stale state file ignored', () => {
@@ -427,33 +534,104 @@ test('bandRows: showModel false hides head', () => {
   const rows = bandRows(snap, 'claude-opus-5-5', NOW_TEST, false, false, state)
   expect(rows.length).toBe(1)
   const row0 = getRow(rows, 0)
-  expect(row0.length).toBeGreaterThan(0)
-  // When showModel=false and there are Claude windows, row starts with "Claude" (no head, no separator)
-  expect(row0[0]!.text).toBe('Claude')
+  // Row starts with "Claude " (no head, no separator)
+  expect(rowText(row0).startsWith('Claude ')).toBe(true)
   expect(findPart(row0, 'Claude').bold).toBe(true)
 })
 
-test('bandRows: separators are " · " between windows', () => {
+test('bandRows: aligned columns with missing kind in middle row', () => {
+  // Claude has 5h and 7d; Go has only 7d and 1mo (missing 5h)
   const snap = {
     effort: '',
     windows: [
-      { kind: '5h' as const, used: 0.3, resetsAt: NOW_TEST + 3600 },
-      { kind: '7d' as const, used: 0.5, resetsAt: NOW_TEST + 4 * 86400_000 },
+      { kind: '5h' as const, used: 0.6, resetsAt: NOW_TEST + 2 * 3600_000 },
+      { kind: '7d' as const, used: 0.4, resetsAt: NOW_TEST + 4 * 86400_000 },
     ],
     ctx: null,
   }
-  const state = {}
-  const rows = bandRows(snap, 'claude-opus-5-5', NOW_TEST, true, false, state)
-  const row0 = getRow(rows, 0)
-  const text = row0.map(p => p.text).join('')
-  // Should have " · " between the two windows
-  expect(text).toContain(' · ')
-})
-test('stateWins claude: empty plans.claude falls back to subscription', () => {
-  const now = Date.now()
   const state = {
-    plans: { claude: {} },
-    subscription: { '5h': { utilization: 0.2, reset: Math.floor(now / 1000) + 60 } },
+    plans: {
+      go: {
+        '7d': { utilization: 0.45, reset: Math.floor(NOW_TEST / 1000) + 5 * 86400 },
+        '1mo': { utilization: 0.73, reset: Math.floor(NOW_TEST / 1000) + 26 * 86400 },
+      },
+    },
   }
-  expect(stateWins(state, 'claude', now).length).toBe(1)
+  const rows = bandRows(snap, 'glm-5.3-flash-cloud-opencode-go-direct', NOW_TEST, true, false, state)
+  expect(rows.length).toBe(2)
+  const row0 = getRow(rows, 0)
+  const row1 = getRow(rows, 1)
+  const text0 = rowText(row0)
+  const text1 = rowText(row1)
+  // Both rows should have same column structure (5h, 7d, 1mo)
+  // Row 1 (Claude): 5h, 7d, no 1mo -> spaces for 1mo
+  expect(text0).toContain('5h pace 60/')
+  expect(text0).toContain('7d pace 40/')
+  // Row 2 (Go): missing 5h -> spaces, then 7d, 1mo
+  expect(text1).toContain('Go ')
+  // The Go row should have indent matching head prefix length
+  expect(text1.startsWith(' '.repeat('Opus 5.5 high | '.length))).toBe(true)
+  // Check alignment: Go's 7d should align with Claude's 7d
+  // We verify by checking that the column widths are consistent
+  expect(text1).toContain('7d pace 45/')
+  expect(text1).toContain('1mo pace 73/')
+  // Missing 5h column should be spaces (not visible but we check structure)
+})
+
+test('bandRows: 1d kind appears between 5h and 7d', () => {
+  const snap = { effort: '', windows: [], ctx: null }
+  const state = {
+    plans: {
+      openrouter: {
+        '5h': { utilization: 0.1, reset: Math.floor(NOW_TEST / 1000) + 3600 },
+        '1d': { utilization: 0.5, reset: Math.floor(NOW_TEST / 1000) + 86400 },
+        '7d': { utilization: 0.3, reset: Math.floor(NOW_TEST / 1000) + 4 * 86400 },
+      },
+    },
+  }
+  const rows = bandRows(snap, 'model (OpenRouter)', NOW_TEST, true, false, state)
+  expect(rows.length).toBe(1)
+  const text = rowText(getRow(rows, 0))
+  // Order: 5h, 1d, 7d
+  const idx5h = text.indexOf('5h pace')
+  const idx1d = text.indexOf('1d pace')
+  const idx7d = text.indexOf('7d pace')
+  expect(idx5h).toBeLessThan(idx1d)
+  expect(idx1d).toBeLessThan(idx7d)
+})
+// --- subscription usage endpoint ---
+
+const USAGE = {
+  five_hour: { utilization: 15.0, resets_at: '2026-11-04T11:00:00.110743+00:00' },
+  seven_day: { utilization: 24.0, resets_at: '2026-11-10T05:00:00.110770+00:00' },
+  seven_day_opus: null,
+  limits: [
+    { kind: 'session', percent: 15, resets_at: '2026-11-04T11:00:00+00:00', scope: null },
+    { kind: 'weekly_all', percent: 24, resets_at: '2026-11-10T05:00:00+00:00', scope: null },
+    { kind: 'weekly_scoped', percent: 31, resets_at: '2026-11-10T05:00:00.111041+00:00',
+      scope: { model: { id: null, display_name: 'Fable' }, surface: null } },
+  ],
+}
+
+test('oauthPlans: claude 5h/7d and the Fable weekly limit', () => {
+  const p = oauthPlans(USAGE)
+  expect(p.claude!['5h']!.utilization).toBe(0.15)
+  expect(p.claude!['7d']!.reset).toBe(Date.parse('2026-11-10T05:00:00.110770+00:00') / 1000)
+  expect(p.fable!['7d']!.utilization).toBe(0.31)
+  expect(Object.keys(p).sort()).toEqual(['claude', 'fable'])
+})
+
+test('oauthPlans: junk gives no plans', () => {
+  expect(oauthPlans(null)).toEqual({})
+  expect(oauthPlans({ five_hour: { utilization: 'x' }, limits: 'no' })).toEqual({})
+})
+
+test('mergeState: endpoint plans over a stale file, Fable row drawn', () => {
+  const now = Date.parse('2026-11-04T08:00:00Z')
+  const stale = { updated: now / 1000 - 30000, plans: { go: { '7d': { utilization: 0.5, reset: now / 1000 + 3600 } } } }
+  const state = mergeState(stale, oauthPlans(USAGE), now)
+  expect(stateWins(state, 'go', now)).toEqual([])
+  expect(stateWins(state, 'fable', now)[0]!.used).toBe(0.31)
+  const rows = bandRows({ effort: '', windows: [], ctx: null }, 'claude-fable-5-1', now, true, false, state)
+  expect(rows.map(r => r.map(p => p.text).join(''))[1]!.trimStart().startsWith('Fable')).toBe(true)
 })

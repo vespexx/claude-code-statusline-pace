@@ -27,15 +27,16 @@ def main():
     out = subprocess.run(["sh", os.path.join(ROOT, "examples", "run.sh")], capture_output=True, text=True, check=True).stdout
     rows = [l for l in out.splitlines() if l]
     h = 70 + 34 * len(rows)
-    svg = ['<svg xmlns="http://www.w3.org/2000/svg" width="1300" height="%d"><rect width="1300" height="%d" rx="10" fill="#1e1f22"/>'
-           '<circle cx="24" cy="22" r="6" fill="#ff5f56"/><circle cx="44" cy="22" r="6" fill="#ffbd2e"/><circle cx="64" cy="22" r="6" fill="#27c93f"/>' % (h, h)]
+    w = max(1300, 60 + int(10.3 * max(len(re.sub(r"\x1b\[\d+m", "", r)) for r in rows)))
+    svg = ['<svg xmlns="http://www.w3.org/2000/svg" width="%d" height="%d"><rect width="%d" height="%d" rx="10" fill="#1e1f22"/>'
+           '<circle cx="24" cy="22" r="6" fill="#ff5f56"/><circle cx="44" cy="22" r="6" fill="#ffbd2e"/><circle cx="64" cy="22" r="6" fill="#27c93f"/>' % (w, h, w, h)]
     for i, r in enumerate(rows):
         svg.append('<text x="24" y="%d" font-family="Menlo,Monaco,monospace" font-size="17" xml:space="preserve">%s</text>' % (70 + 34 * i, tspans(r)))
     svg.append("</svg>")
     docs = os.path.join(ROOT, "docs")
     open(os.path.join(docs, "statusline.svg"), "w").write("".join(svg))
     subprocess.run([CHROME, "--headless=new", "--disable-gpu", "--hide-scrollbars", "--default-background-color=00000000",
-                    "--window-size=1300,%d" % h, "--screenshot=" + os.path.join(docs, "statusline.png"),
+                    "--window-size=%d,%d" % (w, h), "--screenshot=" + os.path.join(docs, "statusline.png"),
                     "file://" + os.path.abspath(os.path.join(docs, "statusline.svg"))], capture_output=True)
 
 
