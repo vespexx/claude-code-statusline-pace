@@ -88,6 +88,7 @@ GO_LABEL = "GLM5.3flash (Cloud, Go Plus, $ ЛУЧШЕЕ ОТНОШЕНИЕ ЛИ�
 ZAI_LABEL = "GLM5.3flash (Cloud, z.ai Lite $18, ★ ЛУЧШЕЕ ОТНОШЕНИЕ ТОКЕНОВ/КРЕДИТ, ×3 к GLM5.3, ≈146–293M ток/нед при кэше 95%)"
 FABLE_LABEL = "Model (Fable, Cloud, ≈500M)"
 OPENROUTER_LABEL = "Model (OpenRouter, free)"
+GEMINI_LABEL = "Gemini 2.5 Pro (Cloud, ≈1M)"
 
 STATE = {
     "subscription": {"5h": {"utilization": 0.3, "reset": NOW + 3600}},
@@ -134,6 +135,12 @@ class Plans(unittest.TestCase):
         self.assertEqual(sl.plan_of("openrouter-model-v1", ""), "openrouter")
         self.assertEqual(sl.plan_of("", "Model (OpenRouter, free)"), "openrouter")
         self.assertEqual(sl.plan_of("claude-openrouter-model", "Claude (OpenRouter)"), "openrouter")  # openrouter before claude
+        # New: gemini
+        self.assertEqual(sl.plan_of("gemini-2.5-pro", ""), "gemini")
+        self.assertEqual(sl.plan_of("", GEMINI_LABEL), "gemini")
+        # gemini after openrouter: gemini via OpenRouter counts as openrouter
+        self.assertEqual(sl.plan_of("openrouter-gemini-model", "Gemini (OpenRouter)"), "openrouter")
+        self.assertEqual(sl.plan_of("gemini-openrouter", "Gemini"), "openrouter")
 
     def test_short_label(self):
         self.assertEqual(sl.short_label(GO_LABEL), "GLM5.3flash (Go Plus, ≈360M вых.ток/мес)")
@@ -189,24 +196,30 @@ class BuildRows(unittest.TestCase):
     def test_claude_only_engine_windows(self):
         snap_wins = [("5h", 0.6, NOW + 2 * 3600), ("7d", 0.4, NOW + 4 * 86400)]
         rows = sl.build_rows(snap_wins, "claude-opus-5-5", "Opus 5.5", "high", True, False, None, {}, NOW)
-        self.assertEqual(len(rows), 1)
+        self.assertEqual(len(rows), 2)  # head + Claude row
+        # Row 0: head alone
         self.assertIn("Opus 5.5 high", rows[0])
-        self.assertIn("Claude", rows[0])
-        self.assertIn("5h pace 60/", rows[0])
-        self.assertIn("7d pace 40/", rows[0])
-        # Claude label should be bold (padded)
-        self.assertIn(sl.BLD + "Claude" + sl.RST, rows[0])
+        self.assertNotIn(" | ", rows[0])
+        # Row 1: Claude row (no indent)
+        self.assertIn("Claude", rows[1])
+        self.assertIn("5h pace 60/", rows[1])
+        self.assertIn("7d pace 40/", rows[1])
+        # Claude label should be bold (current plan)
+        self.assertIn(sl.BLD + "Claude" + sl.RST, rows[1])
 
     def test_claude_fallback_to_state(self):
         snap_wins = []
         state = {"subscription": {"5h": {"utilization": 0.3, "reset": NOW + 3600}}}
         rows = sl.build_rows(snap_wins, "claude-sonnet-4", "Sonnet 4", "", True, False, None, state, NOW)
-        self.assertEqual(len(rows), 1)
-        self.assertIn("Claude", rows[0])
-        self.assertIn("5h pace 30/", rows[0])
+        self.assertEqual(len(rows), 2)  # head + Claude row
+        # Row 0: head
+        self.assertIn("Sonnet 4", rows[0])
+        # Row 1: Claude row
+        self.assertIn("Claude", rows[1])
+        self.assertIn("5h pace 30/", rows[1])
 
     def test_claude_and_go_rows(self):
-        # When Claude has windows: 2 rows (Claude with head, Go indented)
+        # When Claude has windows: head + Claude row + Go row
         snap_wins = [("5h", 0.3, NOW + 3600)]
         state = {
             "plans": {
@@ -218,22 +231,24 @@ class BuildRows(unittest.TestCase):
             },
         }
         rows = sl.build_rows(snap_wins, "glm-5.3-flash-cloud-opencode-go-direct", GO_LABEL, "", True, False, None, state, NOW)
-        self.assertEqual(len(rows), 2)
-        # Row 1: head + Claude
+        self.assertEqual(len(rows), 3)  # head + Claude + Go
+        # Row 0: head alone
         self.assertIn("GLM5.3flash", rows[0])
-        self.assertIn("Claude", rows[0])
-        self.assertIn("5h pace 30/", rows[0])
-        # Row 2: Go indented
-        self.assertIn("Go", rows[1])
-        # Go is current plan, bold (with padding) - check for bold start before "Go" and reset after
-        self.assertRegex(rows[1], re.escape(sl.BLD) + r"Go\s*" + re.escape(sl.RST))
-        self.assertIn("5h pace 14/", rows[1])
-        self.assertIn("7d pace 45/", rows[1])
-        self.assertIn("1mo pace 73/", rows[1])
-        self.assertIn(" · ", rows[1])
+        self.assertNotIn(" | ", rows[0])
+        # Row 1: Claude (not current plan, not bold)
+        self.assertIn("Claude", rows[1])
+        self.assertIn("5h pace 30/", rows[1])
+        self.assertNotIn(sl.BLD + "Claude" + sl.RST, rows[1])
+        # Row 2: Go (current plan, bold)
+        self.assertIn("Go", rows[2])
+        self.assertRegex(rows[2], re.escape(sl.BLD) + r"Go\s*" + re.escape(sl.RST))
+        self.assertIn("5h pace 14/", rows[2])
+        self.assertIn("7d pace 45/", rows[2])
+        self.assertIn("1mo pace 73/", rows[2])
+        self.assertIn(" · ", rows[2])
 
     def test_no_claude_windows_go_gets_head(self):
-        # When NO Claude windows but Go has windows: 1 row (head + Go)
+        # When NO Claude windows but Go has windows: head + Go row
         snap_wins = []
         state = {
             "plans": {
@@ -245,18 +260,19 @@ class BuildRows(unittest.TestCase):
             },
         }
         rows = sl.build_rows(snap_wins, "glm-5.3-flash-cloud-opencode-go-direct", GO_LABEL, "", True, False, None, state, NOW)
-        self.assertEqual(len(rows), 1)
-        # Single row: head + Go
+        self.assertEqual(len(rows), 2)  # head + Go row
+        # Row 0: head alone
         self.assertIn("GLM5.3flash", rows[0])
-        self.assertIn("Go", rows[0])
-        # Go is current plan, bold (with padding)
-        self.assertRegex(rows[0], re.escape(sl.BLD) + r"Go\s*" + re.escape(sl.RST))
-        self.assertIn("5h pace 14/", rows[0])
-        self.assertIn("7d pace 45/", rows[0])
-        self.assertIn("1mo pace 73/", rows[0])
+        self.assertNotIn(" | ", rows[0])
+        # Row 1: Go (current plan, bold)
+        self.assertIn("Go", rows[1])
+        self.assertRegex(rows[1], re.escape(sl.BLD) + r"Go\s*" + re.escape(sl.RST))
+        self.assertIn("5h pace 14/", rows[1])
+        self.assertIn("7d pace 45/", rows[1])
+        self.assertIn("1mo pace 73/", rows[1])
 
     def test_no_claude_windows_zai_gets_head(self):
-        # When NO Claude windows but z.ai has windows: 1 row (head + z.ai)
+        # When NO Claude windows but z.ai has windows: head + z.ai row
         snap_wins = []
         state = {
             "plans": {
@@ -267,9 +283,13 @@ class BuildRows(unittest.TestCase):
             },
         }
         rows = sl.build_rows(snap_wins, "glm-5.3-flash-cloud-zai-direct", ZAI_LABEL, "", True, False, None, state, NOW)
-        self.assertEqual(len(rows), 1)
-        self.assertIn("z.ai", rows[0])
-        self.assertRegex(rows[0], re.escape(sl.BLD) + r"z\.ai\s*" + re.escape(sl.RST))
+        self.assertEqual(len(rows), 2)  # head + z.ai row
+        # Row 0: head alone
+        self.assertIn("GLM5.3flash", rows[0])
+        self.assertNotIn(" | ", rows[0])
+        # Row 1: z.ai (current plan, bold)
+        self.assertIn("z.ai", rows[1])
+        self.assertRegex(rows[1], re.escape(sl.BLD) + r"z\.ai\s*" + re.escape(sl.RST))
 
     def test_all_five_plans_go_current(self):
         snap_wins = [("5h", 0.3, NOW + 3600)]
@@ -282,25 +302,27 @@ class BuildRows(unittest.TestCase):
             },
         }
         rows = sl.build_rows(snap_wins, "glm-5.3-flash-cloud-opencode-go-direct", GO_LABEL, "", True, False, None, state, NOW)
-        self.assertEqual(len(rows), 5)
+        self.assertEqual(len(rows), 6)  # head + 5 plans
+        # Row 0: head
+        self.assertIn("GLM5.3flash", rows[0])
+        self.assertNotIn(" | ", rows[0])
         # Row 1: Claude from engine
-        self.assertIn("Claude", rows[0])
+        self.assertIn("Claude", rows[1])
         # Row 2: Fable
-        self.assertIn("Fable", rows[1])
-        # Row 3: Go bold (with padding)
-        self.assertRegex(rows[2], re.escape(sl.BLD) + r"Go\s*" + re.escape(sl.RST))
+        self.assertIn("Fable", rows[2])
+        # Row 3: Go bold (current plan)
+        self.assertRegex(rows[3], re.escape(sl.BLD) + r"Go\s*" + re.escape(sl.RST))
         # Row 4: z.ai not bold
-        self.assertIn("z.ai", rows[3])
-        # Check z.ai is not bold (no BLD before it or RST after it in the label position)
-        self.assertNotRegex(rows[3], re.escape(sl.BLD) + r"z\.ai")
+        self.assertIn("z.ai", rows[4])
+        self.assertNotRegex(rows[4], re.escape(sl.BLD) + r"z\.ai")
         # Row 5: OpenRouter
-        self.assertIn("OpenRouter", rows[4])
+        self.assertIn("OpenRouter", rows[5])
 
     def test_no_data_show_context_false_returns_no_rows(self):
-        # When no plan data at all but show_model=True, returns head
+        # When no plan data at all but show_model=True and no ctx, returns empty (main() prints the head alone)
         snap_wins = []
         rows = sl.build_rows(snap_wins, "gpt-4", "GPT-4", "", True, False, None, {}, NOW)
-        self.assertEqual(rows, [])  # no plan data and no ctx: no rows; main() prints the head alone
+        self.assertEqual(rows, [])
 
     def test_no_data_show_context_true_shows_ctx_in_head(self):
         snap_wins = []
@@ -309,16 +331,16 @@ class BuildRows(unittest.TestCase):
         self.assertIn("ctx 34%", rows[0])
 
     def test_stale_state_ignored_returns_no_rows(self):
-        # Stale state ignored, no other data -> returns head (show_model=True)
+        # Stale state ignored, no other data -> returns empty (main() prints the head alone)
         snap_wins = []
         rows = sl.build_rows(snap_wins, "glm-5.3-flash-cloud-opencode-go-direct", GO_LABEL, "", True, False, None, STALE_STATE, NOW)
-        self.assertEqual(rows, [])  # no plan data and no ctx: no rows; main() prints the head alone
+        self.assertEqual(rows, [])
 
     def test_show_model_false_hides_head(self):
         snap_wins = [("5h", 0.3, NOW + 3600)]
         rows = sl.build_rows(snap_wins, "claude-opus-5-5", "Opus 5.5", "", False, False, None, {}, NOW)
         self.assertEqual(len(rows), 1)
-        # When show_model=False and there are Claude windows, row starts with bold "Claude" (no head, no separator)
+        # When show_model=False and there are Claude windows, only Claude row (no head)
         self.assertIn(sl.BLD + "Claude" + sl.RST, rows[0])
         self.assertIn("5h pace 30/", rows[0])
 
@@ -343,12 +365,15 @@ class BuildRows(unittest.TestCase):
         finally:
             sys.stdin, sys.stdout = old_stdin, old_stdout
         out = stdout.getvalue()
-        self.assertIn("Opus 5.5 high", out)
-        self.assertIn("ctx 45%", out)
-        self.assertIn("Claude", out)
-        self.assertIn("5h pace 60/", out)
-        self.assertIn("7d pace 40/", out)
-        self.assertIn(" · ", out)
+        # Output should have head on line 1, then plan rows
+        lines = out.strip().split('\n')
+        self.assertEqual(len(lines), 2)  # head + Claude row
+        self.assertIn("Opus 5.5 high", lines[0])
+        self.assertIn("ctx 45%", lines[0])
+        self.assertIn("Claude", lines[1])
+        self.assertIn("5h pace 60/", lines[1])
+        self.assertIn("7d pace 40/", lines[1])
+        self.assertIn(" · ", lines[1])
 
     def test_aligned_columns_with_missing_kind(self):
         # Claude has 5h and 7d; Go has only 7d and 1mo (missing 5h)
@@ -362,21 +387,23 @@ class BuildRows(unittest.TestCase):
             },
         }
         rows = sl.build_rows(snap_wins, "glm-5.3-flash-cloud-opencode-go-direct", GO_LABEL, "", True, False, None, state, NOW)
-        self.assertEqual(len(rows), 2)
+        self.assertEqual(len(rows), 3)  # head + Claude + Go
         row0 = rows[0]
-        row1 = rows[1]
-        # Both rows should have same column structure
+        row1 = rows[1]  # Claude
+        row2 = rows[2]  # Go
+        # Row 0: head alone
+        self.assertIn("GLM5.3flash", row0)
+        self.assertNotIn(" | ", row0)
         # Row 1 (Claude): 5h, 7d
-        self.assertIn("5h pace 60/", row0)
-        self.assertIn("7d pace 40/", row0)
+        self.assertIn("5h pace 60/", row1)
+        self.assertIn("7d pace 40/", row1)
         # Row 2 (Go): missing 5h -> spaces, then 7d, 1mo
-        self.assertIn("Go", row1)
-        # The Go row should have indent matching head prefix length
-        head_prefix = "GLM5.3flash (Go Plus, ≈360M вых.ток/мес) | "
-        self.assertTrue(row1.startswith(" " * len(head_prefix)))
+        self.assertIn("Go", row2)
+        # The Go row should NOT have indent (new layout)
+        self.assertFalse(row2.startswith(" " * 5))
         # Check alignment: Go's 7d should align with Claude's 7d
-        self.assertIn("7d pace 45/", row1)
-        self.assertIn("1mo pace 73/", row1)
+        self.assertIn("7d pace 45/", row2)
+        self.assertIn("1mo pace 73/", row2)
 
     def test_1d_kind_appears_between_5h_and_7d(self):
         snap_wins = []
@@ -390,8 +417,11 @@ class BuildRows(unittest.TestCase):
             },
         }
         rows = sl.build_rows(snap_wins, "model (OpenRouter)", OPENROUTER_LABEL, "", True, False, None, state, NOW)
-        self.assertEqual(len(rows), 1)
-        text = rows[0]
+        self.assertEqual(len(rows), 2)  # head + openrouter
+        # Row 0: head
+        self.assertIn("Model", rows[0])
+        # Row 1: OpenRouter
+        text = rows[1]
         # Order: 5h, 1d, 7d
         idx5h = text.index("5h pace")
         idx1d = text.index("1d pace")
@@ -402,12 +432,14 @@ class BuildRows(unittest.TestCase):
     def test_ctx_in_head_not_at_end(self):
         snap_wins = [("5h", 0.6, NOW + 2 * 3600)]
         rows = sl.build_rows(snap_wins, "Opus 5.5", "Opus 5.5", "high", True, True, 34.7, {}, NOW)
-        self.assertEqual(len(rows), 1)
+        self.assertEqual(len(rows), 2)  # head + Claude
+        # Row 0: head with ctx
         text = rows[0]
-        # ctx should be in head (before the | separator)
-        ctx_pos = text.index("ctx 35%")
-        sep_pos = text.index(" | ")
-        self.assertLess(ctx_pos, sep_pos)
+        self.assertIn("ctx 35%", text)
+        self.assertNotIn(" | ", text)
+        # ctx should be in head (before any plan)
+        # Row 1: Claude with windows
+        self.assertIn("5h pace 60/", rows[1])
 
 
 class BadInput(unittest.TestCase):
@@ -435,11 +467,18 @@ class Alignment(unittest.TestCase):
         rows = sl.build_rows([("5h", 0.07, now + 3 * 3600), ("7d", 0.23, now + 5 * 86400)], "qwen-local-pool", "qwen-local-pool",
                              "medium", True, True, 4, state, now)
         plain = [sl.re.sub(r"\x1b\[\d+m", "", r) for r in rows]
-        self.assertTrue(plain[0].startswith("qwen-local-pool medium ctx 4% | Claude     5h pace 7/"))
-        self.assertEqual(len({r.find("7d pace") for r in plain}), 1)
-        self.assertEqual(len({r.find("5h pace") for r in plain if "5h pace" in r}), 1)
-        self.assertTrue(plain[2].startswith(" " * len("qwen-local-pool medium ctx 4% | ") + "z.ai       "))
-        self.assertNotIn("·", plain[2])  # z.ai has no cell before 7d
+        # Row 0: head
+        self.assertTrue(plain[0].startswith("qwen-local-pool medium ctx 4%"))
+        self.assertNotIn(" | ", plain[0])
+        # Row 1: Claude
+        self.assertTrue(plain[1].startswith("Claude"))
+        # 7d pace position should be same across PLAN ROWS (skip head row 0)
+        plan_rows = plain[1:]
+        self.assertEqual(len({r.find("7d pace") for r in plan_rows}), 1)
+        self.assertEqual(len({r.find("5h pace") for r in plan_rows if "5h pace" in r}), 1)
+        # Row 3 (z.ai): no indent, 7d aligned (index 3 in plain = row 3, which is z.ai)
+        self.assertTrue(plain[3].startswith("z.ai"))
+        self.assertNotIn("·", plain[3])  # z.ai has no cell before 7d
 
 
 USAGE = {
@@ -459,10 +498,113 @@ class CompactSingleRow(unittest.TestCase):
         now = NOW
         rows = sl.build_rows([("5h", 0.07, now + 3 * 3600), ("7d", 0.23, now + 5 * 86400)], "claude-opus-5-5", "Opus 5.5",
                              "high", True, True, 4, {}, now)
-        plain = sl.re.sub(r"\x1b\[\d+m", "", rows[0])
-        self.assertEqual(len(rows), 1)
-        self.assertTrue(plain.startswith("Opus 5.5 high ctx 4% | Claude 5h pace 7/"))
-        self.assertNotIn("  ", plain)
+        self.assertEqual(len(rows), 2)  # head + Claude
+        plain_head = sl.re.sub(r"\x1b\[\d+m", "", rows[0])
+        plain_claude = sl.re.sub(r"\x1b\[\d+m", "", rows[1])
+        # Head alone
+        self.assertTrue(plain_head.startswith("Opus 5.5 high ctx 4%"))
+        self.assertNotIn(" | ", plain_head)
+        # Claude row compact (no double spaces for alignment padding)
+        self.assertTrue(plain_claude.startswith("Claude"))
+        self.assertNotIn("  ", plain_claude)
+
+
+class StatusAndGemini(unittest.TestCase):
+    def test_gemini_plan_last_in_order(self):
+        # gemini should be last in PLAN_ORDER
+        snap_wins = [("5h", 0.3, NOW + 3600)]
+        state = {
+            "plans": {
+                "fable": {"7d": {"utilization": 0.4, "reset": NOW + 4 * 86400}},
+                "go": {"5h": {"utilization": 0.14, "reset": NOW + 3 * 3600}},
+                "zai": {"5h": {"utilization": 0.2, "reset": NOW + 2 * 3600}},
+                "openrouter": {"1d": {"utilization": 0.5, "reset": NOW + 86400}},
+                "gemini": {"7d": {"utilization": 0.6, "reset": NOW + 5 * 86400}},
+            },
+        }
+        rows = sl.build_rows(snap_wins, "gemini-2.5-pro", GEMINI_LABEL, "", True, False, None, state, NOW)
+        # head + 6 plans = 7 rows
+        self.assertEqual(len(rows), 7)
+        # Row 6 should be Gemini (last)
+        self.assertIn("Gemini", rows[6])
+        # Gemini is current plan, bold
+        self.assertRegex(rows[6], re.escape(sl.BLD) + r"Gemini\s*" + re.escape(sl.RST))
+
+    def test_gemini_status_only_row(self):
+        # A plan with only a status gets a row
+        snap_wins = []
+        state = {
+            "plans": {
+                "gemini": {"status": "ok"},
+            },
+        }
+        rows = sl.build_rows(snap_wins, "gemini-2.5-pro", GEMINI_LABEL, "", True, False, None, state, NOW)
+        self.assertEqual(len(rows), 2)  # head + Gemini status row
+        # Row 0: head
+        self.assertIn("Gemini 2.5 Pro", rows[0])
+        # Row 1: Gemini with status
+        self.assertIn("Gemini", rows[1])
+        self.assertIn(sl.GRN + "ok" + sl.RST, rows[1])  # green for "ok"
+
+    def test_status_after_windows_with_dot_separator(self):
+        # Status shown after windows with " · " separator
+        snap_wins = [("5h", 0.3, NOW + 3600)]
+        state = {
+            "plans": {
+                "claude": {"5h": {"utilization": 0.3, "reset": NOW + 3600}, "status": "slow 5m"},
+            },
+        }
+        rows = sl.build_rows(snap_wins, "claude-opus-5-5", "Opus 5.5", "", True, False, None, state, NOW)
+        self.assertEqual(len(rows), 2)  # head + Claude
+        # Row 1: Claude with status after windows
+        self.assertIn("5h pace 30/", rows[1])
+        self.assertIn(" · ", rows[1])
+        self.assertIn(sl.YEL + "slow 5m" + sl.RST, rows[1])  # yellow for non-"ok"
+
+    def test_status_colour_green_for_ok(self):
+        snap_wins = []
+        state = {"plans": {"go": {"status": "ok"}}}
+        rows = sl.build_rows(snap_wins, "glm-5.3-flash-cloud-opencode-go-direct", GO_LABEL, "", True, False, None, state, NOW)
+        self.assertEqual(len(rows), 2)
+        self.assertIn(sl.GRN + "ok" + sl.RST, rows[1])
+
+    def test_status_colour_yellow_for_non_ok(self):
+        snap_wins = []
+        state = {"plans": {"go": {"status": "slow 5m"}}}
+        rows = sl.build_rows(snap_wins, "glm-5.3-flash-cloud-opencode-go-direct", GO_LABEL, "", True, False, None, state, NOW)
+        self.assertEqual(len(rows), 2)
+        self.assertIn(sl.YEL + "slow 5m" + sl.RST, rows[1])
+
+    def test_status_control_chars_removed_trimmed_max_40(self):
+        # Control chars removed, trimmed, max 40 chars
+        snap_wins = []
+        long_status = "x" * 50
+        state = {"plans": {"go": {"status": "\x00slow\x1f 5m\x7f " + long_status}}}
+        rows = sl.build_rows(snap_wins, "glm-5.3-flash-cloud-opencode-go-direct", GO_LABEL, "", True, False, None, state, NOW)
+        self.assertEqual(len(rows), 2)
+        # Should be trimmed to 40 chars, control chars removed
+        self.assertIn("slow 5m " + "x" * 31, rows[1])  # "slow 5m " = 8 chars, 32 more = 40
+        self.assertNotIn("\x00", rows[1])
+        self.assertNotIn("\x1f", rows[1])
+        self.assertNotIn("\x7f", rows[1])
+
+    def test_plan_of_gemini_vs_openrouter_gemini(self):
+        # Direct gemini -> gemini
+        self.assertEqual(sl.plan_of("gemini-2.5-pro", ""), "gemini")
+        # Gemini via OpenRouter -> openrouter (openrouter checked before gemini)
+        self.assertEqual(sl.plan_of("openrouter-gemini-2.5", "Gemini (OpenRouter)"), "openrouter")
+        self.assertEqual(sl.plan_of("gemini-model", "Model (OpenRouter)"), "openrouter")
+
+    def test_single_plan_row_compact_no_double_spaces(self):
+        # A single plan row (with head) should have no double spaces for alignment
+        now = NOW
+        rows = sl.build_rows([("5h", 0.07, now + 3 * 3600), ("7d", 0.23, now + 5 * 86400)], "claude-opus-5-5", "Opus 5.5",
+                             "high", True, True, 4, {}, now)
+        # 2 rows: head + 1 plan row
+        self.assertEqual(len(rows), 2)
+        for row in rows:
+            plain = sl.re.sub(r"\x1b\[\d+m", "", row)
+            self.assertNotIn("  ", plain)  # no double spaces
 
 
 class Weekday(unittest.TestCase):
@@ -543,5 +685,61 @@ class OAuth(unittest.TestCase):
         self.assertEqual(sl.read_oauth(time.time()), {})
 
 
+class SharedLayoutCases(unittest.TestCase):
+    """The same cases run in the plugin (plugins/statusline-pace/tests/band.test.tsx): both must give the same rows.
+    Times of day are masked (## / Www) so the rows do not depend on the time zone."""
+    CASES = os.path.join(os.path.dirname(__file__), "..", "plugins", "statusline-pace", "tests", "layout-cases.ts")
+
+    @staticmethod
+    def mask(text):
+        text = re.sub(r"\x1b\[\d+m", "", text)
+        text = re.sub(r"\b(Sun|Mon|Tue|Wed|Thu|Fri|Sat)-", "Www-", text)
+        text = re.sub(r"\b\d\d:\d\d\b", "##:##", text)
+        return re.sub(r"\b\d\d\.\d\d\b", "##.##", text)
+
+    def test_rows_match_fixture(self):
+        with open(self.CASES, encoding="utf-8") as f:
+            cases = json.loads(f.read().rsplit("\nexport default ", 1)[1])
+        self.assertGreaterEqual(len(cases), 4)
+        for c in cases:
+            wins = [(e["kind"], e["used"], e["reset_ms"] / 1000) for e in c["engine"]]
+            rows = sl.build_rows(wins, c["model_id"], c["label"], c["effort"], c["showModel"], c["showContext"],
+                                 c["ctx"], c["state"] or {}, c["now_ms"] / 1000)
+            with self.subTest(c["name"]):
+                self.assertEqual([self.mask(r) for r in rows], c["rows"])
+
+
 if __name__ == "__main__":
     unittest.main()
+
+class Agents(unittest.TestCase):
+    def test_row_counts_pairs_and_strips_prefixes(self):
+        row = sl.agents_row([("worker-coder", "glm-5.3-flash"), ("Explore", None), ("Explore", None), ("worker-verifier", "claude-sonnet-5-5")])
+        self.assertEqual(row, "agents coder:glm-5.3-flash, Explore:starting x2, verifier:sonnet-5-5")
+        self.assertEqual(sl.agents_row([]), "")
+
+    def test_running_subagents_from_transcripts(self):
+        import tempfile
+        with tempfile.TemporaryDirectory() as d:
+            sub = os.path.join(d, "sid", "subagents")
+            os.makedirs(sub)
+            msg = {"type": "assistant", "message": {"role": "assistant", "model": "glm-5.3-flash"}}
+            with open(os.path.join(sub, "agent-a.jsonl"), "w") as f:
+                f.write(json.dumps({"type": "user"}) + "\n" + json.dumps(msg) + "\n")
+            with open(os.path.join(sub, "agent-a.meta.json"), "w") as f:
+                json.dump({"agentType": "worker-coder"}, f)
+            with open(os.path.join(sub, "agent-b.jsonl"), "w") as f:
+                f.write(json.dumps({"type": "user"}) + "\n")
+            old = os.path.join(sub, "agent-c.jsonl")
+            with open(old, "w") as f:
+                f.write(json.dumps(msg) + "\n")
+            os.utime(old, (time.time() - 600, time.time() - 600))
+            inp = {"transcript_path": os.path.join(d, "sid.jsonl"), "session_id": "sid"}
+            self.assertEqual(sl.subagents(inp, time.time()), [("worker-coder", "glm-5.3-flash"), ("agent", None)])
+            self.assertEqual(sl.subagents({}, time.time()), [])
+
+    def test_last_line_only_while_agents_run(self):
+        import subprocess
+        out = subprocess.run([sys.executable, sl.__file__], input=json.dumps({"model": {"display_name": "Opus"}}),
+                             capture_output=True, text=True).stdout
+        self.assertNotIn("agents", out)

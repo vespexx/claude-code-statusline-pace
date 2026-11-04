@@ -1,7 +1,7 @@
 {
   "name": "statusline-pace",
-  "version": "0.3.0",
-  "description": "A pace band above the prompt: aligned columns for 5h/1d/7d/1mo, ctx in the head, and rows for Claude, Fable, Go, z.ai, OpenRouter plans.",
+  "version": "0.4.0",
+  "description": "The subscription pace above the prompt: the model and ctx on line 1, then aligned 5h/1d/7d/1mo rows for Claude, Fable, Go, z.ai, OpenRouter and Gemini.",
   "author": {
     "name": "vespexx",
     "url": "https://github.com/vespexx"
@@ -21,19 +21,19 @@
     "showModel": {
       "type": "boolean",
       "title": "Show the model",
-      "description": "Show the model and effort (Opus high) at the start of the band.",
+      "description": "Show line 1: the model and effort (Opus high).",
       "default": true
     },
     "showContext": {
       "type": "boolean",
       "title": "Show context fill",
-      "description": "Show the context window fill (ctx 34%) in the head.",
-      "default": false
+      "description": "Show the context window fill (ctx 34%) on line 1.",
+      "default": true
     },
     "stateFile": {
       "type": "string",
       "title": "Plan state file",
-      "description": "Path to a windows.json for the Fable (plans.fable), Go (plans.go), z.ai (plans.zai), OpenRouter (plans.openrouter) rows and the Claude fallback (plans.claude or subscription); ~ allowed. Empty = off.",
+      "description": "Path to a windows.json for the Fable, Go, z.ai, OpenRouter and Gemini rows (plans.<plan>) and the Claude fallback (plans.claude or subscription); ~ allowed. Empty = off.",
       "default": ""
     },
     "oauthUsage": {

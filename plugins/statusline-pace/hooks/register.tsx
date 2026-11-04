@@ -4,9 +4,10 @@ import type { EngineInterface, Register, SessionRateLimit } from 'claude-code'
 import type { Kind, Snap, Win } from '../types'
 
 // statusline-pace: the subscription pace as a band above the prompt.
-// v0.3: aligned columns, ctx in head, 1d kind, fable & openrouter plans.
+// v0.4: the head (model, effort, ctx) on its own line, then one aligned row per plan; a plan's status text;
+// the running sub-agents on the last line.
 // Kind order: 5h, 1d, 7d, 1mo.
-// Plan order: claude, fable, go, zai, openrouter. Claude and per-model weekly limits (Fable) also come from
+// Plan order: claude, fable, go, zai, openrouter, gemini. Claude and per-model weekly limits (Fable) also come from
 // the subscription usage endpoint, read with the engine-held credential (the token never reaches the plugin).
 
 const snap = atom({ plugin: 'statusline-pace', key: 'snap' } as const, null, {
@@ -68,8 +69,8 @@ export function labelItems(label: string): [string, string[]] {
 }
 
 // Mirrors statusline.py plan_of: takes the whole /model entry string.
-// Returns 'claude', 'fable', 'go', 'zai', 'openrouter', or ''.
-export function planOf(model: string): 'claude' | 'fable' | 'go' | 'zai' | 'openrouter' | '' {
+// Returns 'claude', 'fable', 'go', 'zai', 'openrouter', 'gemini', or ''.
+export function planOf(model: string): Plan | '' {
   const s = model.toLowerCase()
   const [, items] = labelItems(model)
   const itemSet = new Set(items)
@@ -80,6 +81,10 @@ export function planOf(model: string): 'claude' | 'fable' | 'go' | 'zai' | 'open
   // openrouter check before claude
   if (s.includes('openrouter') || itemSet.has('OpenRouter')) {
     return 'openrouter'
+  }
+  // gemini after openrouter: a Gemini model through OpenRouter counts as OpenRouter
+  if (s.includes('gemini')) {
+    return 'gemini'
   }
   if (s.includes('opencode-go') || itemSet.has('Go') || itemSet.has('Go Plus')) {
     return 'go'
@@ -111,26 +116,36 @@ function isStateStale(state: unknown, now: number = Date.now()): boolean {
   return now - updated * 1000 > STALE_THRESHOLD_MS
 }
 
-// Mirrors statusline.py state_windows. Supports 'claude', 'fable', 'go', 'zai', 'openrouter'.
-// Stale file (updated > 6h ago) is treated as no data.
-export function stateWins(state: unknown, plan: 'claude' | 'fable' | 'go' | 'zai' | 'openrouter', now: number = Date.now()): Win[] {
-  if (typeof state !== 'object' || state === null) return []
-  if (isStateStale(state, now)) return []
+type Plan = 'claude' | 'fable' | 'go' | 'zai' | 'openrouter' | 'gemini'
+
+// Mirrors statusline.py state_plan: plans.<plan> of the state file ({} when
+// absent), `subscription` for the Claude fallback. Stale file (updated > 6h
+// ago) is treated as no data.
+function statePlan(state: unknown, plan: Plan, now: number): Record<string, unknown> {
+  if (typeof state !== 'object' || state === null) return {}
+  if (isStateStale(state, now)) return {}
   const stateObj = state as Record<string, unknown>
   const plans = stateObj.plans
   const plansObj = (typeof plans === 'object' && plans !== null) ? plans as Record<string, unknown> : {}
   const src = plansObj[plan]
   if (typeof src !== 'object' || src === null || Object.keys(src).length === 0) {
-    // Claude fallback to subscription
-    if (plan === 'claude') {
-      const sub = stateObj.subscription
-      if (typeof sub === 'object' && sub !== null) {
-        return extractWins(sub as Record<string, unknown>)
-      }
-    }
-    return []
+    const sub = stateObj.subscription
+    return plan === 'claude' && typeof sub === 'object' && sub !== null ? sub as Record<string, unknown> : {}
   }
-  return extractWins(src as Record<string, unknown>)
+  return src as Record<string, unknown>
+}
+
+// Mirrors statusline.py state_windows.
+export function stateWins(state: unknown, plan: Plan, now: number = Date.now()): Win[] {
+  return extractWins(statePlan(state, plan, now))
+}
+
+// Mirrors statusline.py state_status: plans.<plan>.status, a short text such
+// as "ok" or "slow 5m" ('' when absent), at most 40 characters.
+export function stateStatus(state: unknown, plan: Plan, now: number = Date.now()): string {
+  const v = statePlan(state, plan, now).status
+  // eslint-disable-next-line no-control-regex
+  return typeof v === 'string' ? v.replace(/[\x00-\x1f\x7f]/g, '').trim().slice(0, 40) : ''
 }
 
 function extractWins(src: Record<string, unknown>): Win[] {
@@ -175,17 +190,18 @@ export function oneWin(win: Win, now: number) {
 
 type Part = { text: string; color?: string; dim?: boolean; bold?: boolean }
 
-const PLAN_NAME = { claude: 'Claude', fable: 'Fable', go: 'Go', zai: 'z.ai', openrouter: 'OpenRouter' } as const
-const PLAN_ORDER = ['claude', 'fable', 'go', 'zai', 'openrouter'] as const
+const PLAN_NAME = { claude: 'Claude', fable: 'Fable', go: 'Go', zai: 'z.ai', openrouter: 'OpenRouter', gemini: 'Gemini' } as const
+const PLAN_ORDER = ['claude', 'fable', 'go', 'zai', 'openrouter', 'gemini'] as const
 const KIND_ORDER: Kind[] = ['5h', '1d', '7d', '1mo']
 
-// The band as aligned rows of parts. Row 1 starts with the head
-// (`<model> <effort> ctx N%` + ' | '); later rows are indented to the same
-// column. Each row: the plan label padded to the longest one, then one
-// column per kind (5h, 1d, 7d, 1mo) that any row has, each as wide as its
-// longest cell. A gap of 3 before every column but the first: ' · ' when
-// the row has this cell and an earlier one, else spaces. Claude windows come
-// from the engine, else the file; the other plans only from the file.
+// The band as aligned rows of parts. Line 1 is the head (`<model> <effort>
+// ctx N%`), then one row per plan, Claude first. Each row: the plan label
+// padded to the longest one, then one column per kind (5h, 1d, 7d, 1mo) that
+// any row has, each as wide as its longest cell. A gap of 3 before every
+// column but the first: ' · ' when the row has this cell and an earlier one,
+// else spaces. The plan's status text goes last. One plan row = no padding.
+// Claude windows come from the engine, else the file; the other plans only
+// from the file.
 export function bandRows(
   s: Snap | null,
   model: string,
@@ -197,8 +213,12 @@ export function bandRows(
   const current = planOf(model)
   const engine = s?.windows ?? []
   const plans = PLAN_ORDER
-    .map(plan => ({ plan, wins: plan === 'claude' && engine.length > 0 ? engine : stateWins(state, plan, now) }))
-    .filter(r => r.wins.length > 0)
+    .map(plan => ({
+      plan,
+      wins: plan === 'claude' && engine.length > 0 ? engine : stateWins(state, plan, now),
+      status: stateStatus(state, plan, now),
+    }))
+    .filter(r => r.wins.length > 0 || r.status !== '')
   const ctx = showContext && s !== null && s.ctx !== null ? ` ctx ${Math.round(s.ctx)}%` : ''
   const short = shortLabel(model)
   const effort = s?.effort ?? ''
@@ -209,14 +229,13 @@ export function bandRows(
   const kinds = KIND_ORDER.filter(k => cells.some(c => c.has(k)))
   const width = new Map(kinds.map(k => [k, Math.max(...cells.map(c => c.get(k)?.text.length ?? 0))]))
   const labelWidth = Math.max(...plans.map(r => PLAN_NAME[r.plan].length))
-  const prefix = head !== '' ? head + ' | ' : ''
 
-  return plans.map((r, i) => {
-    const parts: Part[] = [
-      { text: i === 0 ? prefix : ' '.repeat(prefix.length) },
+  const rows = plans.map((r, i) => {
+    const lead: Part[] = [
       { text: PLAN_NAME[r.plan], bold: r.plan === current },
       { text: ' '.repeat(labelWidth - PLAN_NAME[r.plan].length + 1) },
     ]
+    const parts: Part[] = [...lead]
     let seen = false
     kinds.forEach((k, ki) => {
       const cell = cells[i]!.get(k)
@@ -224,8 +243,12 @@ export function bandRows(
       parts.push(cell ?? { text: '' }, { text: ' '.repeat(width.get(k)! - (cell?.text.length ?? 0)) })
       if (cell !== undefined) seen = true
     })
-    return trimRow(parts)
+    if (r.status === '') return trimRow(parts)
+    // After the last cell, or in the first column when the plan has no windows.
+    const status = { text: r.status, color: r.status === 'ok' ? 'success' : 'warning' }
+    return seen ? [...trimRow(parts), { text: ' · ', dim: true }, status] : [...lead, status]
   })
+  return head !== '' ? [[{ text: head }], ...rows] : rows
 }
 
 // Drop trailing spaces and empty parts so a row ends at its last cell.
@@ -277,7 +300,12 @@ export function mergeState(file: unknown, oauth: Plans, now: number): unknown {
 // this plugin. No first-party login (API key, gateway, 3P) -> no plans.
 let oauthCache: { at: number; got: number; plans: Plans } = { at: 0, got: 0, plans: {} }
 
-async function readOauth($: EngineInterface): Promise<Plans> {
+// Test-only: forget the cached answer.
+export function resetOauthCache(): void {
+  oauthCache = { at: 0, got: 0, plans: {} }
+}
+
+export async function readOauth($: EngineInterface): Promise<Plans> {
   const now = Date.now()
   if (now - oauthCache.at >= 300_000) {
     oauthCache.at = now
@@ -295,6 +323,72 @@ async function readOauth($: EngineInterface): Promise<Plans> {
   }
   // A failed or empty answer keeps the last good plans while they are younger than the stale limit.
   return now - oauthCache.got <= STALE_THRESHOLD_MS ? oauthCache.plans : {}
+}
+
+// Mirrors statusline.py last_model: the model of the last assistant message
+// in a transcript's text, null before the first one.
+export function lastModel(text: string): string | null {
+  const lines = text.split('\n')
+  for (let i = lines.length - 1; i >= 0; i--) {
+    const raw = lines[i]!
+    if (!raw.includes('"assistant"')) continue
+    try {
+      const msg = (JSON.parse(raw) as { message?: { role?: unknown; model?: unknown } }).message
+      if (msg?.role === 'assistant' && typeof msg.model === 'string' && msg.model !== '' && msg.model !== '<synthetic>') {
+        return msg.model
+      }
+    } catch { /* not a JSON line */ }
+  }
+  return null
+}
+
+// Mirrors statusline.py agents_row: `agents coder:glm-5.3-flash, explorer:starting x2`,
+// '' when none; the type without `worker-`, the model without `claude-`, equal pairs counted.
+export function agentsRow(agents: readonly (readonly [string, string | null])[]): string {
+  const counts = new Map<string, number>()
+  for (const [kind, model] of agents) {
+    const key = `${kind.replace('worker-', '')}:${model !== null ? model.replace('claude-', '') : 'starting'}`
+    counts.set(key, (counts.get(key) ?? 0) + 1)
+  }
+  if (counts.size === 0) return ''
+  return 'agents ' + [...counts].map(([k, n]) => (n > 1 ? `${k} x${n}` : k)).join(', ')
+}
+
+// Mirrors statusline.py subagents: a transcript under <transcript dir>/<session>/subagents/
+// written within the last 120 s is a running sub-agent. The folder comes from the
+// classic hook envelope (session start, prompt, sub-agent start). Read at most every 10 s.
+const ACTIVE_MS = 120_000
+let agentsDir = ''
+let agentsCache: { at: number; dir: string; agents: [string, string | null][] } = { at: 0, dir: '', agents: [] }
+
+export function setAgentsDir(transcriptPath: unknown, sessionId: unknown): void {
+  if (typeof transcriptPath !== 'string' || typeof sessionId !== 'string' || transcriptPath === '' || sessionId === '') return
+  agentsDir = `${transcriptPath.replace(/\/[^/]*$/, '')}/${sessionId}/subagents`
+}
+
+export async function readAgents($: EngineInterface, now: number = Date.now()): Promise<[string, string | null][]> {
+  if (agentsDir === '') return []
+  if (agentsCache.dir === agentsDir && now - agentsCache.at < 10_000) return agentsCache.agents
+  const out: [string, string | null][] = []
+  try {
+    const names = (await $.fs.list(agentsDir)).map(f => f.name).filter(n => n.endsWith('.jsonl')).sort()
+    for (const n of names) {
+      const path = `${agentsDir}/${n}`
+      try {
+        if (now - (await $.fs.stat(path)).mtimeMs > ACTIVE_MS) continue
+      } catch { continue }
+      let kind = 'agent'
+      try {
+        const meta = JSON.parse(await $.fs.read(path.slice(0, -'.jsonl'.length) + '.meta.json')) as { agentType?: unknown }
+        if (typeof meta.agentType === 'string' && meta.agentType !== '') kind = meta.agentType
+      } catch { /* no meta */ }
+      let model: string | null
+      try { model = lastModel(await $.fs.read(path)) } catch { model = '?' }
+      out.push([kind, model])
+    }
+  } catch { /* no folder yet */ }
+  agentsCache = { at: now, dir: agentsDir, agents: out }
+  return out
 }
 
 // Cache state file read for 30s.
@@ -333,7 +427,7 @@ async function pull($: EngineInterface) {
 
 export const register: Register = (on, options) => {
   const showModel = options['showModel'] !== false
-  const showContext = options['showContext'] === true
+  const showContext = options['showContext'] !== false
   const stateFile = typeof options['stateFile'] === 'string' ? options['stateFile'] : ''
   const oauthUsage = options['oauthUsage'] !== false
 
@@ -342,6 +436,11 @@ export const register: Register = (on, options) => {
     $.clock.every(60_000, () => $.ui.invalidate('ui.render'))
     return next(e)
   })
+
+  // Where the sub-agent transcripts are: from the classic hook envelope.
+  on('classic.SessionStart', ($, e, next) => (setAgentsDir(e.transcript_path, e.session_id), next(e)))
+  on('classic.UserPromptSubmit', ($, e, next) => (setAgentsDir(e.transcript_path, e.session_id), next(e)))
+  on('classic.SubagentStart', ($, e, next) => (setAgentsDir(e.transcript_path, e.session_id), next(e)))
 
   on('session.measure', async ($, e, next) => {
     await update($, snap, prev => ({
@@ -373,6 +472,9 @@ export const register: Register = (on, options) => {
     const file = stateFile !== '' ? await readStateFile($, stateFile) : null
     const state = mergeState(file, oauthUsage ? await readOauth($) : {}, now)
     const rows = bandRows(s, model, now, showModel, showContext, state)
+    // The running sub-agents go last, only while there are any.
+    const agents = agentsRow(await readAgents($, now))
+    if (agents !== '') rows.push([{ text: agents, dim: true }])
     if (rows.length === 0) return next(e)
 
     const { Box, Text } = $.ui.resolve(e)

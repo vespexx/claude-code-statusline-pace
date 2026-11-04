@@ -6,4 +6,5 @@
            "zai": {"5h": {"utilization": 0.2, "reset": "@NOW+3.5h"},
                    "7d": {"utilization": 0.93, "reset": "@NOW+2.9d"}},
            "openrouter": {"1d": {"utilization": 0.31, "reset": "@NOW+14h"},
-                          "7d": {"utilization": 0.3, "reset": "@NOW+4d"}}}}
+                          "7d": {"utilization": 0.3, "reset": "@NOW+4d"}},
+           "gemini": {"status": "ok"}}}
