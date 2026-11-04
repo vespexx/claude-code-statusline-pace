@@ -275,22 +275,26 @@ export function mergeState(file: unknown, oauth: Plans, now: number): unknown {
 // The endpoint, at most every 5 minutes. The engine holds the credential and
 // sets the header itself (`$.session.authorize`): the token never reaches
 // this plugin. No first-party login (API key, gateway, 3P) -> no plans.
-let oauthCache: { at: number; plans: Plans } = { at: 0, plans: {} }
+let oauthCache: { at: number; got: number; plans: Plans } = { at: 0, got: 0, plans: {} }
 
 async function readOauth($: EngineInterface): Promise<Plans> {
   const now = Date.now()
-  if (now - oauthCache.at < 300_000) return oauthCache.plans
-  oauthCache = { at: now, plans: oauthCache.plans }
-  try {
-    const auth = await $.session.authorize()
-    if (auth === null || auth.kind !== 'bearer') return (oauthCache.plans = {})
-    const r = await $.http.fetch('https://api.anthropic.com/api/oauth/usage', {
-      auth: auth.handle,
-      headers: { 'anthropic-beta': 'oauth-2025-04-20' },
-    })
-    if (r.ok) oauthCache.plans = oauthPlans(JSON.parse(r.text))
-  } catch { /* keep the last good answer */ }
-  return oauthCache.plans
+  if (now - oauthCache.at >= 300_000) {
+    oauthCache.at = now
+    try {
+      const auth = await $.session.authorize()
+      if (auth !== null && auth.kind === 'bearer') {
+        const r = await $.http.fetch('https://api.anthropic.com/api/oauth/usage', {
+          auth: auth.handle,
+          headers: { 'anthropic-beta': 'oauth-2025-04-20' },
+        })
+        const plans = r.ok ? oauthPlans(JSON.parse(r.text)) : {}
+        if (Object.keys(plans).length > 0) oauthCache = { at: now, got: now, plans }
+      }
+    } catch { /* keep the last good answer */ }
+  }
+  // A failed or empty answer keeps the last good plans while they are younger than the stale limit.
+  return now - oauthCache.got <= STALE_THRESHOLD_MS ? oauthCache.plans : {}
 }
 
 // Cache state file read for 30s.

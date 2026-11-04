@@ -12,20 +12,26 @@ GLM5.3flash (Go Plus) medium ctx 42% | Claude     5h pace 38/60% ETA -/13:03    
                                        OpenRouter                              1d pace 31/42% ETA -/01:03 · 7d pace 30/43% ETA -/Sun-11:03
 ```
 
-The screenshot stacks several cases, one per selected model: Opus (Claude only), a GLM model on the Go plan (the
-Claude row, then the Fable, Go, z.ai and OpenRouter rows), an exhausted 5h window, and Sonnet. In a real session you see
-one block: the Claude row, plus one row per other plan that has data. Times are illustrative.
+**What you get after install, with no setup:** the Claude row, plus a Fable row when your plan has a Fable weekly
+limit (Max and above). The Go, z.ai and OpenRouter rows appear only when you point the plugin at a windows file you
+keep yourself (see [Windows file](#windows-file-for-fable-go-zai-openrouter)). **Network:** the plugin reads Anthropic's
+subscription usage endpoint every 5 minutes with Claude Code's own login (it never sees the token; option `oauthUsage`).
+
+The screenshot stacks several cases, one per selected model: Opus (Claude only), a GLM model with a full windows file
+(Claude, Fable, Go, z.ai and OpenRouter rows), an exhausted 5h window, and Sonnet. In a real session you see one block.
+The wide gap between the `5h` and `7d` columns is the `1d` column, which only the OpenRouter row fills. Times are
+illustrative.
 
 | Part | Meaning |
 | --- | --- |
-| `qwen-local-pool medium ctx 4%` | model name, effort level, and context fill (when enabled) |
+| `GLM5.3flash (Go Plus) medium ctx 42%` | model name, effort level, and context fill (when enabled) |
 | ` | ` | separator between the head and the Claude windows (row 1 only) |
 | `Claude` / `Fable` / `Go` / `z.ai` / `OpenRouter` | plan label; **bold** for the plan behind the selected model |
 | `5h` / `1d` / `7d` / `1mo` | the rate-limit window (kind order fixed) |
-| `pace 7/28%` | used share of the limit / elapsed share of the window |
-| `ETA -/14:00` | when the limit hits 100% at the current burn / when the window resets |
-| `ETA now/14:00` | the limit is already at 100% (red) |
-| `ETA -/14:00` | at the current burn the limit will not run out before the reset |
+| `pace 38/60%` | used share of the limit / elapsed share of the window |
+| `ETA 15:20/16:40` | when the limit hits 100% at the current burn / when the window resets |
+| `ETA now/16:40` | the limit is already at 100% (red) |
+| `ETA -/13:03` | at the current burn the limit will not run out before the reset |
 | ` · ` | separator between windows of the same row |
 | red / green | off-pace (red) or on-pace (green) |
 
@@ -61,10 +67,10 @@ Remove it: `/plugin uninstall statusline-pace`.
 
 The plugin needs a recent Claude Code (it uses the mods API, early access; tested on 2.1.311). It shows rate-limit figures for:
 - **Claude** (Pro/Max subscription): 5h and 7d windows from the engine's rate limits; before the first answer of a session, from the subscription usage endpoint (below), else the windows file.
-- **Fable** (and any other per-model weekly limit of your plan): the 7d window from the subscription usage endpoint. Claude Code does not pass this window to plugins or the status line ([anthropics/claude-code#93107](https://github.com/anthropics/claude-code/issues/93107)), so the plugin asks `https://api.anthropic.com/api/oauth/usage` itself — the endpoint `/usage` reads — at most every 5 minutes. **The token never reaches the plugin:** it calls `$.session.authorize()`, and Claude Code adds its own login header to that one first-party request. With an API key, a gateway or a 3P provider there is no such login and no request. Turn it off with the option `oauthUsage: false`.
+- **Fable**: the 7d window from the subscription usage endpoint (its `limits[]`, kind `weekly_scoped`; the endpoint is undocumented and may change, and then the Fable row is simply absent). Claude Code does not pass this window to plugins or the status line ([anthropics/claude-code#93107](https://github.com/anthropics/claude-code/issues/93107)), so the plugin asks `https://api.anthropic.com/api/oauth/usage` itself — the endpoint `/usage` reads — at most every 5 minutes. **In the plugin the token never reaches plugin code:** it calls `$.session.authorize()`, and Claude Code adds its own login header to that one first-party request. With an API key, a gateway or a 3P provider there is no such login and no request. Turn it off with the option `oauthUsage: false`. (The plain status line is different: see its own section; there the Fable row is opt-in and the script itself reads the token.)
 - **OpenCode Go** (Go / Go Plus): 5h, 7d, and 1mo windows from the state file `plans.go`.
 - **z.ai** (GLM via z.ai): 5h and 7d windows from the state file `plans.zai`.
-- **OpenRouter**: 1d (free daily requests) and 7d (budget) windows from the state file `plans.openrouter`. OpenRouter has no pace windows in the engine; the 1d kind is 86400 s with `HH:MM` format.
+- **OpenRouter**: from the state file `plans.openrouter`. The windows file decides what each window measures; the author's exporter writes `1d` = free-model requests used today / the daily request limit (a request count, not USD; resets 00:00 UTC) and `7d` = USD spent / the key's weekly budget. The plugin only draws the utilization it is given.
 - The Claude row is shown whatever model is selected; the plan label of the selected model is bold.
 
 **Without a windows file** (`stateFile` empty, the default) you get the Claude row (and the Fable row when your plan has a Fable limit), with no error. The Fable, Go, z.ai, and OpenRouter rows need a JSON file in the shape shown under [Windows file for Fable, Go, z.ai, OpenRouter](#windows-file-for-fable-go-zai-openrouter); no exporter for it is published here, so you write it yourself from the vendors' usage APIs (or leave it off).
@@ -113,7 +119,7 @@ macOS/Linux. On Windows use `python` (or `py`) and a forward-slash absolute path
 }
 ```
 
-**Fable row in the plain status line (opt-in):** a status-line command gets no credential handle from Claude Code, so the script can read the usage endpoint only with Claude Code's own login itself. Set `PACE_OAUTH=1` in the command to allow it: the script reads the token from the macOS keychain item `Claude Code-credentials` (or `~/.claude/.credentials.json` on Linux), sends it only to `api.anthropic.com`, and caches only the parsed windows (`~/.cache/statusline-pace/oauth-usage.json`, mode 600, 5 minutes), never the token. Off by default.
+**Fable row in the plain status line (opt-in):** a status-line command gets no credential handle from Claude Code, so the script can read the usage endpoint only with Claude Code's own login itself. Set `PACE_OAUTH=1` in the command to allow it: the script reads the token from the macOS keychain item `Claude Code-credentials` (or `~/.claude/.credentials.json` on Linux), sends it only to `api.anthropic.com` (redirects are refused), and caches only the parsed windows (`~/.cache/statusline-pace/oauth-usage.json`, mode 600, 5 minutes), never the token. Off by default.
 
 **API-key (non-subscription) users** get no rate limits from Claude Code and no usage endpoint: the plugin draws no band, and the plain status line prints the model head alone.
 

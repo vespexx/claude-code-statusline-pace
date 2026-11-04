@@ -1,4 +1,4 @@
-import os, sys, time, unittest, re
+import json, os, re, sys, time, unittest
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 import statusline as sl
 
@@ -477,6 +477,55 @@ class OAuth(unittest.TestCase):
         state = sl.merge_state(stale, sl.oauth_plans(USAGE), now)
         self.assertEqual(sl.state_windows(state, "go", now), [])
         self.assertEqual(sl.state_windows(state, "fable", now)[0][1], 0.31)
+
+    def _run(self, answer, now, cache=None):
+        import io, tempfile
+        d = tempfile.mkdtemp()
+        saved = (sl.OAUTH_CACHE, sl.oauth_token, sl.urllib.request.build_opener)
+        sl.OAUTH_CACHE = os.path.join(d, "c.json")
+        if cache is not None:
+            with open(sl.OAUTH_CACHE, "w") as f:
+                json.dump(cache, f)
+        sl.oauth_token = lambda: "test-token"
+
+        class Opener:
+            def open(self, req, timeout=3):
+                if isinstance(answer, Exception):
+                    raise answer
+                return io.BytesIO(json.dumps(answer).encode())
+        sl.urllib.request.build_opener = lambda *h: Opener()
+        os.environ["PACE_OAUTH"] = "1"
+        try:
+            plans = sl.read_oauth(now)
+            with open(sl.OAUTH_CACHE) as f:
+                raw = f.read()
+            mode = os.stat(sl.OAUTH_CACHE).st_mode & 0o777
+            return plans, raw, mode
+        finally:
+            os.environ.pop("PACE_OAUTH", None)
+            sl.OAUTH_CACHE, sl.oauth_token, sl.urllib.request.build_opener = saved
+
+    def test_fresh_answer_cached_without_token(self):
+        plans, raw, mode = self._run(USAGE, 1000.0)
+        self.assertEqual(plans["fable"]["7d"]["utilization"], 0.31)
+        self.assertNotIn("test-token", raw)
+        self.assertEqual(mode, 0o600)
+
+    def test_failure_keeps_last_good_plans_with_their_age(self):
+        good = sl.oauth_plans(USAGE)
+        plans, raw, _ = self._run(OSError("down"), 2000.0, {"at": 1000.0, "got": 1000.0, "plans": good})
+        self.assertEqual(plans, good)
+        self.assertEqual(json.loads(raw)["got"], 1000.0)
+
+    def test_empty_answer_does_not_erase_plans(self):
+        good = sl.oauth_plans(USAGE)
+        plans, _, _ = self._run({}, 2000.0, {"at": 1000.0, "got": 1000.0, "plans": good})
+        self.assertEqual(plans, good)
+
+    def test_old_plans_expire(self):
+        good = sl.oauth_plans(USAGE)
+        plans, _, _ = self._run(OSError("down"), 1000.0 + sl.STALE_THRESHOLD_S + 1, {"at": 1000.0, "got": 1000.0, "plans": good})
+        self.assertEqual(plans, {})
 
     def test_off_by_default(self):
         os.environ.pop("PACE_OAUTH", None)

@@ -24,7 +24,7 @@ A window or plan can be absent. Old router shape `{"subscription": {...}}` still
 Stale file (updated > 6h ago) ignored. NaN filtered, negative clamped.
 Stdlib only, never raises.
 """
-import datetime, json, math, os, re, sys, time
+import datetime, json, math, os, re, sys, time, urllib.request
 
 RED, YEL, GRN, RST, BLD = "\033[31m", "\033[33m", "\033[32m", "\033[0m", "\033[1m"
 WINDOWS = {"5h": 5 * 3600, "1d": 86400, "7d": 7 * 86400, "1mo": 30 * 86400}
@@ -225,6 +225,7 @@ def merge_state(file, oauth, now):
 
 
 OAUTH_CACHE = os.path.expanduser("~/.cache/statusline-pace/oauth-usage.json")
+USAGE_URL = "https://api.anthropic.com/api/oauth/usage"
 
 
 def oauth_token():
@@ -240,37 +241,46 @@ def oauth_token():
     return json.loads(raw)["claudeAiOauth"]["accessToken"]
 
 
+class _NoRedirect(urllib.request.HTTPRedirectHandler):
+    def redirect_request(self, *args, **kwargs):  # the token goes to api.anthropic.com and nowhere else
+        return None
+
+
 def read_oauth(now):
-    """Opt-in (PACE_OAUTH=1): the endpoint at most every 5 minutes. Only the parsed plans are cached
-    (OAUTH_CACHE, mode 600), never the token; a failed call keeps the last good plans."""
+    """Opt-in (PACE_OAUTH=1): the endpoint at most every 5 minutes. Only the parsed plans are cached (OAUTH_CACHE,
+    mode 600), never the token. A failed or empty answer keeps the last good plans and their age."""
     if os.environ.get("PACE_OAUTH") != "1":
         return {}
     cache = {}
     try:
         with open(OAUTH_CACHE) as f:
             cache = json.load(f)
-        if now - float(cache.get("at", 0)) < 300:
-            return cache.get("plans") or {}
     except Exception:  # noqa: BLE001
         pass
-    plans = cache.get("plans") or {}
+    plans = cache.get("plans") if isinstance(cache.get("plans"), dict) else {}
+    try:  # the last good plans count only while younger than the stale limit
+        last = plans if now - float(cache.get("got", 0)) <= STALE_THRESHOLD_S else {}
+        if now - float(cache.get("at", 0)) < 300:
+            return last
+    except (TypeError, ValueError):
+        last = {}
+    fresh = {}
     try:
-        import urllib.request
-        req = urllib.request.Request("https://api.anthropic.com/api/oauth/usage", headers={
-            "Authorization": "Bearer " + oauth_token(), "anthropic-beta": "oauth-2025-04-20"})
-        with urllib.request.urlopen(req, timeout=3) as r:
-            plans = oauth_plans(json.load(r))
+        req = urllib.request.Request(USAGE_URL, headers={"Authorization": "Bearer " + oauth_token(),
+                                                         "anthropic-beta": "oauth-2025-04-20"})
+        with urllib.request.build_opener(_NoRedirect).open(req, timeout=3) as r:
+            fresh = oauth_plans(json.load(r))
     except Exception:  # noqa: BLE001
         pass
     try:
         os.makedirs(os.path.dirname(OAUTH_CACHE), exist_ok=True)
         fd = os.open(OAUTH_CACHE + ".tmp", os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
-        with os.fdopen(fd, "w") as f:
-            json.dump({"at": now, "plans": plans}, f)
+        with os.fdopen(fd, "w") as f:  # a failure is retried in 5 minutes, but the old plans keep their old age
+            json.dump({"at": now, "plans": fresh or plans, "got": now if fresh else cache.get("got", 0)}, f)
         os.replace(OAUTH_CACHE + ".tmp", OAUTH_CACHE)
     except Exception:  # noqa: BLE001
         pass
-    return plans
+    return fresh or last
 
 
 def build_rows(snap_wins, model_id, label, effort, show_model, show_context, ctx_percent, state, now):
