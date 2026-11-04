@@ -1,10 +1,10 @@
 # claude-code-statusline-pace
 
 Shows how fast you burn your Claude Code subscription limits and **when the plan windows will run out**: the used
-share against the elapsed share of each window (5h, 7d, ...), a run-out ETA, and red when you are ahead of pace. A last
+share against the elapsed share of each window (5h, 7d, ...), a run-out ETA, yellow when you are ahead of pace and red when a limit is used up. A last
 line lists the sub-agents running right now and the model each one really answered with.
 
-**Current release: [v0.4.0](https://github.com/vespexx/claude-code-statusline-pace/releases/tag/v0.4.0)** —
+**Current release: [v0.4.1](https://github.com/vespexx/claude-code-statusline-pace/releases/tag/v0.4.1)** —
 [install it as a plugin](#a-plugin-band-above-the-prompt) or [as a status line](#b-a-status-line-below-the-prompt).
 
 ## Two ways to show it
@@ -55,7 +55,7 @@ with three sub-agents running:
 GLM5.3flash (Go Plus) medium ctx 42%
 Claude     5h pace 38/60% ETA -/15:18                              · 7d pace 19/17% ETA Mon-16:05/Tue-08:30
 Fable                                                                7d pace 40/43% ETA -/Sun-13:18
-Go         5h pace 14/40% ETA -/16:18                              · 7d pace 45/14% ETA Thu-18:38/Tue-13:18 · 1mo pace 73/13% ETA 06.11/30.11
+Go         5h pace 14/40% ETA -/16:18                              · 7d pace 100/14% ETA now/Tue-13:18      · 1mo pace 73/13% ETA 06.11/30.11
 z.ai       5h pace 20/30% ETA -/16:48                              · 7d pace 93/59% ETA Wed-20:42/Sat-10:54
 OpenRouter                              1d pace 31/42% ETA -/03:18 · 7d pace 30/43% ETA -/Sun-13:18
 Gemini     ok
@@ -77,11 +77,11 @@ Claude Code screen, and the times are relative to the moment of the run. The plu
 | `5h` / `1d` / `7d` / `1mo` | the rate-limit window (column order fixed) |
 | `pace 38/60%` | used share of the limit / elapsed share of the window |
 | `ETA 15:20/16:40` | when the limit hits 100% at the current burn / when the window resets |
-| `ETA now/16:40` | the limit is already at 100% (red) |
+| `ETA now/16:40` | the limit is already used up (red) |
 | `ETA -/13:03` | at the current burn the limit will not run out before the reset |
 | ` · ` | separator between windows of the same row |
 | `ok`, `slow 3.8-flash till 13:20` | a plan's status text from the windows file (green `ok`, else yellow), for plans without usage numbers |
-| red / green | off pace (red) or on pace (green) |
+| red / yellow / green / no colour | limit already used up (red), off pace (yellow), on pace (green), on pace in a row that already has a used-up limit (no colour) |
 | `agents coder:glm-5.3-flash, explorer:starting x2` | last line, dim, only while sub-agents run: type and the model of its last answer (`starting` before the first); a sub-agent counts as running while its transcript was written in the last 120 s |
 
 **Columns are aligned** (monospace): each window column has the width of its widest cell; a plan's missing window is
@@ -91,10 +91,11 @@ padded to the longest label. A single plan row is not padded at all.
 **How the ETA is computed.** Linear extrapolation: the used share per elapsed share of the window stays constant, so
 `eta = now + (1 - used) / used * elapsed_time`. No history is stored; it is recomputed on every refresh.
 
-**Off-pace rules** (the same thresholds a pace-aware model router uses to stop sending work to a plan):
-- **5h**: red when used > `max(1.5 × elapsed, 10%)` or used > 75%.
-- **1d / 7d / 1mo**: red when used ≥ 90% **or** used > elapsed + 5%.
-- Everything else is green.
+**Colour rules** (the off-pace thresholds are the same a pace-aware model router uses to stop sending work to a plan):
+- **Red**: the limit is already used up: used ≥ 100% and the window has not reset yet (`ETA now/...`).
+- **5h**: yellow when used > `max(1.5 × elapsed, 10%)` or used > 75%.
+- **1d / 7d / 1mo**: yellow when used ≥ 90% **or** used > elapsed + 5%.
+- Everything else is on pace: green, or no colour when the same row has a used-up (red) window.
 
 ## Install
 
@@ -162,7 +163,7 @@ others one at a time (`/plugin disable <name>`) and open a new session.
 Needs Python 3 (stdlib only). Download the script of the release:
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/vespexx/claude-code-statusline-pace/v0.4.0/statusline.py -o ~/.claude/statusline-pace.py
+curl -fsSL https://raw.githubusercontent.com/vespexx/claude-code-statusline-pace/v0.4.1/statusline.py -o ~/.claude/statusline-pace.py
 ```
 
 Merge this key into your `~/.claude/settings.json` (do not replace the file), then restart Claude Code. `statusLine` is
@@ -201,7 +202,7 @@ Gemini row. The author runs a private exporter (every 5 minutes) that polls the 
 that writes the same shape works. To write it by hand or from a cron job, use the generator (in a clone of this repo, or download it alone):
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/vespexx/claude-code-statusline-pace/v0.4.0/scripts/make_windows.py -o make_windows.py
+curl -fsSL https://raw.githubusercontent.com/vespexx/claude-code-statusline-pace/v0.4.1/scripts/make_windows.py -o make_windows.py
 python3 make_windows.py --plan go 5h=14%@2026-11-04T18:00 7d=45%@2026-11-09T03:00 \
   --plan gemini status=ok -o ~/.local/state/subscription-quotas/windows.json
 ```

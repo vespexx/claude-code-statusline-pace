@@ -19,7 +19,9 @@ status  a plan may carry a short text (`plans.<plan>.status`, e.g. "ok", "slow 3
 pace    used % / elapsed % of the window
 ETA     when the window reaches 100% if the burn so far continues / when the window resets
           (`-` when the limit will not run out before the reset, `now` when it is already at 100%)
-colour  green on pace, red off pace: 5h used > max(1.5 x elapsed, 10%) or > 75%; 1d/7d/1mo used >= 90% OR used > elapsed + 5%
+colour  red when the limit is used up (not stale, used >= 100%, `ETA now/...`); yellow off pace: 5h used > max(1.5 x elapsed,
+          10%) or > 75%; 1d/7d/1mo used >= 90% OR used > elapsed + 5%; green on pace; no colour on pace in a plan row
+          that has a used-up window
 bold    the plan label (Claude/Fable/Go/z.ai/OpenRouter) of the plan behind the selected model
 
 Plans (row order): claude, fable, go, zai, openrouter, gemini.
@@ -87,16 +89,25 @@ def off_pace(w, util, elapsed):
     return util >= 0.9 or util > elapsed + 0.05
 
 
-def window_part(w, util, reset, now):
+def exhausted(util, reset, now):
+    """The window is not stale (now < reset) and its limit is used up (the cell shows `ETA now/...`)."""
+    return math.isfinite(util) and math.isfinite(reset) and now < reset and util >= 1
+
+
+def window_part(w, util, reset, now, plain=False):
+    """One window cell: red when exhausted, yellow when off pace, green on pace. plain=True drops the green (an on-pace
+    cell in a row that has an exhausted cell)."""
     if not (math.isfinite(util) and math.isfinite(reset)):
         return ""
+    used_up = exhausted(util, reset, now)
     if now >= reset:  # stale data: the window has already rolled over
         util, elapsed = 0.0, 0.0
     else:
         elapsed = min(1.0, max(0.0, 1 - (reset - now) / WINDOWS[w]))
-    col = RED if off_pace(w, util, elapsed) else GRN
+    col = RED if used_up else YEL if off_pace(w, util, elapsed) else "" if plain else GRN
     return "%s%s pace %d/%d%% ETA %s/%s%s" % (col, w, math.floor(util * 100 + 1e-9), round(elapsed * 100),
-                                            eta(w, util, elapsed, now, reset), fmt(w, reset) if now < reset else "now", RST)
+                                            eta(w, util, elapsed, now, reset), fmt(w, reset) if now < reset else "now",
+                                            RST if col else "")
 
 
 def windows_part(wins, now):
@@ -320,7 +331,8 @@ def build_rows(snap_wins, model_id, label, effort, show_model, show_context, ctx
     head = short + (" " + effort if effort else "") + ctx if show_model and short else ""
     if not plans:
         return [head] if head and ctx else []
-    cells = [{w: window_part(w, u, r, now) for w, u, r in wins} for _, wins, _ in plans]
+    cells = [{w: window_part(w, u, r, now, plain=any(exhausted(u2, r2, now) for _, u2, r2 in wins)) for w, u, r in wins}
+             for _, wins, _ in plans]
     kinds = [k for k in KIND_ORDER if any(k in c for c in cells)]
     width = {k: max(visible_len(c.get(k, "")) for c in cells) for k in kinds}
     label_w = max(len(PLAN_DISPLAY[p]) for p, _, _ in plans)
