@@ -24,7 +24,7 @@ or when you want the rows below the prompt.
 The text blocks under the pictures are the same examples rendered at another moment, so their clock times differ from
 the pictures.
 
-**Only a Claude subscription** (here Max $100, with its Fable weekly limit), no setup after install:
+**Only a Claude subscription** (here Max $100, with its Fable weekly limit):
 
 | A. Plugin | B. Status line |
 | --- | --- |
@@ -36,7 +36,9 @@ Claude 5h pace 19/40% ETA -/16:04 · 7d pace 24/40% ETA -/Sun-17:52
 Fable                               7d pace 31/40% ETA -/Sun-17:52
 ```
 
-On Pro (no Fable limit) the same picture has the Claude row only. One plan row is never padded.
+A: no setup after install. B: add `PACE_OAUTH=1` to the command for the Fable row (see [B](#b-status-line-below-the-prompt));
+without it B shows the Claude row only. On Pro (no Fable limit) both show the Claude row only. One plan row is never
+padded.
 
 **Several subscriptions** (Claude, Fable, OpenCode Go, z.ai, OpenRouter, Gemini) from a [windows file](#windows-file-for-other-plans),
 with three sub-agents running:
@@ -194,7 +196,8 @@ Without a subscription the script prints line 1 (the model) alone; the sub-agent
 ## Windows file for other plans
 
 Go, z.ai, OpenRouter, Gemini (and Fable, when you do not use the usage endpoint) come from a JSON file that some other
-tool keeps fresh. The author runs a private exporter (every 5 minutes) that polls the vendors' usage APIs; any tool
+tool keeps fresh. Nothing in this repo fetches them for you: with no such file you get no Go, z.ai, OpenRouter or
+Gemini row. The author runs a private exporter (every 5 minutes) that polls the vendors' usage APIs; any tool
 that writes the same shape works. To write it by hand or from a cron job, use the generator (in a clone of this repo, or download it alone):
 
 ```bash

@@ -14,7 +14,7 @@ Lines 2..n: one row per plan with data, Claude first (plan of selected model is 
 Last line: the running sub-agents (`<type>:<model>`, the model of the last answer in the sub-agent transcript, `starting`
           before the first one), only while there are any: a transcript under <transcript dir>/<session>/subagents/
           written within the last 120 s counts as running
-status  a plan may carry a short text (`plans.<plan>.status`, e.g. "ok", "slow 5m"): shown after its windows,
+status  a plan may carry a short text (`plans.<plan>.status`, e.g. "ok", "slow 3.8-flash till 13:20"): shown after its windows,
           green when "ok", else yellow; a plan with only a status still gets a row
 pace    used % / elapsed % of the window
 ETA     when the window reaches 100% if the burn so far continues / when the window resets
