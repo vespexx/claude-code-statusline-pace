@@ -174,15 +174,20 @@ export function offPace(kind: Kind, util: number, frac: number): boolean {
   return util >= 0.9 || util > frac + 0.05
 }
 
-// One window part with colour from offPace.
-export function oneWin(win: Win, now: number) {
+// Mirrors statusline.py exhausted: not stale and the limit is used up.
+export function exhausted(win: Win, now: number): boolean {
+  return win.resetsAt - now > 0 && win.used >= 1
+}
+
+// One window part: 'error' when exhausted, 'warning' when off pace, else 'success'.
+export function oneWin(win: Win, now: number): { text: string; color?: string } {
   const left = win.resetsAt - now
   const stale = left <= 0
   const util = stale ? 0 : win.used
   const frac = stale ? 0 : Math.min(1, Math.max(0, 1 - left / LENGTH[win.kind]))
   const at = now + ((1 - util) / util) * frac * LENGTH[win.kind]
   const out = util >= 1 ? 'now' : util <= 0 || frac <= 0 || at >= win.resetsAt ? '-' : fmt(win.kind, at)
-  const color = offPace(win.kind, util, frac) ? 'error' : 'success'
+  const color = exhausted(win, now) ? 'error' : offPace(win.kind, util, frac) ? 'warning' : 'success'
   const usedPct = Math.floor(util * 100 + 1e-9)
   const text = `${win.kind} pace ${usedPct}/${Math.round(frac * 100)}% ETA ${out}/${stale ? 'now' : fmt(win.kind, win.resetsAt)}`
   return { text, color }
@@ -225,7 +230,14 @@ export function bandRows(
   const head = showModel && short !== '' ? `${short}${effort !== '' ? ' ' + effort : ''}${ctx}` : ''
   if (plans.length === 0) return head !== '' && ctx !== '' ? [[{ text: head }]] : []
 
-  const cells = plans.map(r => new Map(r.wins.map(w => [w.kind, oneWin(w, now)])))
+  // A row with an exhausted cell drops the green of its on-pace cells.
+  const cells = plans.map(r => {
+    const plain = r.wins.some(w => exhausted(w, now))
+    return new Map(r.wins.map(w => {
+      const c = oneWin(w, now)
+      return [w.kind, plain && c.color === 'success' ? { text: c.text } : c]
+    }))
+  })
   const kinds = KIND_ORDER.filter(k => cells.some(c => c.has(k)))
   const width = new Map(kinds.map(k => [k, Math.max(...cells.map(c => c.get(k)?.text.length ?? 0))]))
   const labelWidth = Math.max(...plans.map(r => PLAN_NAME[r.plan].length))

@@ -5,6 +5,7 @@ import {
   fmt,
   mergeState,
   oauthPlans,
+  exhausted,
   offPace,
   oneWin,
   planOf,
@@ -334,13 +335,27 @@ test('stateWins unknown shape returns empty', () => {
 
 // --- oneWin tests ---
 
-test('oneWin colours: off-pace -> error, on-pace -> success', () => {
+test('oneWin colours: exhausted -> error, off-pace -> warning, on-pace -> success', () => {
   const now = Date.now()
   const resetsAt = now + 3 * 3600_000
   const winOnPace = { kind: '5h' as const, used: 0.4, resetsAt }
   const winOffPace = { kind: '5h' as const, used: 0.8, resetsAt }
+  const winFull = { kind: '7d' as const, used: 1.0, resetsAt }
   expect(oneWin(winOnPace, now).color).toBe('success')
-  expect(oneWin(winOffPace, now).color).toBe('error')
+  expect(oneWin(winOffPace, now).color).toBe('warning')
+  expect(oneWin({ kind: '7d', used: 0.95, resetsAt }, now).color).toBe('warning')
+  expect(oneWin(winFull, now).color).toBe('error')
+  expect(oneWin(winFull, now).text).toContain('ETA now/')
+})
+
+test('oneWin: a stale window with used 1.0 is not exhausted', () => {
+  const now = Date.now()
+  expect(exhausted({ kind: '5h', used: 1.0, resetsAt: now - 10_000 }, now)).toBe(false)
+  expect(exhausted({ kind: '5h', used: 1.0, resetsAt: now }, now)).toBe(false)
+  expect(exhausted({ kind: '5h', used: 1.0, resetsAt: now + 10_000 }, now)).toBe(true)
+  const c = oneWin({ kind: '5h', used: 1.0, resetsAt: now - 10_000 }, now)
+  expect(c.color).toBe('success')
+  expect(c.text).toContain('ETA -/now')
 })
 
 // --- bandRows tests (aligned layout) ---
@@ -737,6 +752,40 @@ test('bandRows: status colour is success for "ok", warning otherwise', () => {
   expect(rows.length).toBe(2)
   expect(rows[0]!.find(p => p.text === 'slow 5m')!.color).toBe('warning')
   expect(rows[1]!.find(p => p.text === 'ok')!.color).toBe('success')
+})
+
+test('bandRows: on-pace cells lose their colour in a row with an exhausted cell', () => {
+  const state = {
+    plans: {
+      go: {
+        '5h': { utilization: 0.05, reset: SEC + 3 * 3600 },
+        '7d': { utilization: 0.95, reset: SEC + 86400 },
+        '1mo': { utilization: 1.0, reset: SEC + 10 * 86400 },
+      },
+      zai: { '5h': { utilization: 0.05, reset: SEC + 3 * 3600 } },
+    },
+  }
+  const rows = bandRows({ effort: '', windows: [], ctx: null }, 'x', NOW_TEST, false, false, state)
+  expect(rows.length).toBe(2)
+  const cell = (r: number, k: string) => rows[r]!.find(p => p.text.startsWith(k + ' pace'))!
+  expect(cell(0, '5h').color).toBeUndefined()
+  expect(cell(0, '7d').color).toBe('warning')
+  expect(cell(0, '1mo').color).toBe('error')
+  expect(cell(1, '5h').color).toBe('success')
+})
+
+test('bandRows: a stale full window does not drop the green of its row', () => {
+  const state = {
+    plans: {
+      go: {
+        '5h': { utilization: 1.0, reset: SEC - 10 },
+        '7d': { utilization: 0.05, reset: SEC + 86400 },
+      },
+    },
+  }
+  const rows = bandRows({ effort: '', windows: [], ctx: null }, 'x', NOW_TEST, false, false, state)
+  expect(rows[0]!.find(p => p.text.startsWith('7d pace'))!.color).toBe('success')
+  expect(rows[0]!.find(p => p.text.startsWith('5h pace'))!.color).toBe('success')
 })
 
 test('bandRows: status is cut to 40 characters', () => {

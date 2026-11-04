@@ -37,11 +37,11 @@ class Eta(unittest.TestCase):
             out = sl.pace_part({"five_hour": {"used_percentage": pct, "resets_at": NOW + 9000}}, NOW)
             self.assertIn("5h pace %d/" % pct, out)
 
-    def test_colours(self):  # green on pace, red off pace
+    def test_colours(self):  # green on pace, yellow off pace, red used up
         rl = lambda u, r: {"five_hour": {"used_percentage": u, "resets_at": NOW + r}}
         self.assertTrue(sl.pace_part(rl(60, 3 * 3600), NOW).startswith(sl.GRN))   # 60% at 40% elapsed: under 1.5x
-        self.assertTrue(sl.pace_part(rl(65, 3 * 3600), NOW).startswith(sl.RED))   # over 1.5x elapsed
-        self.assertTrue(sl.pace_part(rl(80, 600), NOW).startswith(sl.RED))        # over the 75% cap
+        self.assertTrue(sl.pace_part(rl(65, 3 * 3600), NOW).startswith(sl.YEL))   # over 1.5x elapsed
+        self.assertTrue(sl.pace_part(rl(80, 600), NOW).startswith(sl.YEL))        # over the 75% cap
         self.assertTrue(sl.pace_part(rl(5, 3600), NOW).startswith(sl.GRN))
         self.assertTrue(sl.pace_part(rl(100, 3600), NOW).startswith(sl.RED))
         self.assertTrue(sl.pace_part(rl(50, -10), NOW).startswith(sl.GRN))
@@ -160,7 +160,7 @@ class Plans(unittest.TestCase):
         self.assertIn("7d pace 45/14%", out)
         self.assertIn("1mo pace 73/13%", out)
         self.assertTrue(out.startswith(sl.GRN))                 # 5h on pace
-        self.assertIn(sl.RED + "1mo pace", out)                  # 73% used at 13% of the month
+        self.assertIn(sl.YEL + "1mo pace", out)                  # 73% used at 13% of the month: off pace
         self.assertIn(" · ", out)
         self.assertNotIn("; ", out)
 
@@ -440,6 +440,49 @@ class BuildRows(unittest.TestCase):
         # ctx should be in head (before any plan)
         # Row 1: Claude with windows
         self.assertIn("5h pace 60/", rows[1])
+
+
+class ExhaustedColours(unittest.TestCase):
+    def test_exhausted_cell_is_red(self):
+        out = sl.window_part("7d", 1.0, NOW + 86400, NOW)
+        self.assertTrue(out.startswith(sl.RED + "7d pace 100/"))
+        self.assertIn("ETA now/", out)
+
+    def test_off_pace_not_exhausted_is_yellow(self):
+        self.assertTrue(sl.window_part("7d", 0.95, NOW + 86400, NOW).startswith(sl.YEL))
+        self.assertTrue(sl.window_part("5h", 0.8, NOW + 3 * 3600, NOW).startswith(sl.YEL))
+
+    def test_on_pace_in_exhausted_row_has_no_colour(self):
+        state = {"plans": {"go": {"5h": {"utilization": 0.05, "reset": NOW + 3 * 3600},
+                                  "7d": {"utilization": 0.95, "reset": NOW + 86400},
+                                  "1mo": {"utilization": 1.0, "reset": NOW + 10 * 86400}}}}
+        rows = sl.build_rows([], "glm-5.3-flash-cloud-opencode-go-direct", GO_LABEL, "", False, False, None, state, NOW)
+        self.assertEqual(len(rows), 1)
+        self.assertNotIn(sl.GRN, rows[0])
+        self.assertIn(" 5h pace 5/", rows[0])                    # no colour code before the on-pace cell
+        self.assertIn(sl.YEL + "7d pace 95/", rows[0])
+        self.assertIn(sl.RED + "1mo pace 100/", rows[0])
+
+    def test_on_pace_in_row_without_exhausted_is_green(self):
+        state = {"plans": {"go": {"5h": {"utilization": 0.05, "reset": NOW + 3 * 3600},
+                                  "1mo": {"utilization": 1.0, "reset": NOW + 10 * 86400}},
+                           "zai": {"5h": {"utilization": 0.05, "reset": NOW + 3 * 3600}}}}
+        rows = sl.build_rows([], "glm-5.3-flash-cloud-zai-direct", ZAI_LABEL, "", False, False, None, state, NOW)
+        self.assertEqual(len(rows), 2)
+        self.assertIn(sl.GRN + "5h pace 5/", rows[1])           # z.ai row has no used-up window
+        self.assertNotIn(sl.GRN, rows[0])                        # Go row has one
+
+    def test_stale_full_window_is_not_exhausted(self):
+        self.assertFalse(sl.exhausted(1.0, NOW - 10, NOW))
+        self.assertFalse(sl.exhausted(1.0, NOW, NOW))
+        self.assertTrue(sl.exhausted(1.0, NOW + 10, NOW))
+        out = sl.window_part("5h", 1.0, NOW - 10, NOW)
+        self.assertTrue(out.startswith(sl.GRN))
+        self.assertIn("ETA -/now", out)
+        rows = sl.build_rows([], "x", "x", "", False, False, None,
+                             {"plans": {"go": {"5h": {"utilization": 1.0, "reset": NOW - 10},
+                                               "7d": {"utilization": 0.05, "reset": NOW + 86400}}}}, NOW)
+        self.assertIn(sl.GRN + "7d pace", rows[0])
 
 
 class BadInput(unittest.TestCase):

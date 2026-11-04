@@ -1,6 +1,6 @@
 {
   "name": "statusline-pace",
-  "version": "0.4.0",
+  "version": "0.4.1",
   "description": "The subscription pace above the prompt: the model and ctx on line 1, then aligned 5h/1d/7d/1mo rows for Claude, Fable, Go, z.ai, OpenRouter and Gemini.",
   "author": {
     "name": "vespexx",
