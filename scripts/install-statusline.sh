@@ -64,7 +64,12 @@ if os.path.exists(path):
         if not isinstance(data, dict):
             print("Error: " + path + " is not a JSON object. It was not changed.")
             sys.exit(2)
-data["statusLine"] = {"type": "command", "command": "python3 " + os.path.expanduser("~/.claude/statusline-pace.py"), "refreshInterval": 60}
+old = data.get("statusLine")
+if old is not None:
+    old_cmd = old.get("command", json.dumps(old)) if isinstance(old, dict) else json.dumps(old)
+    print("Existing statusLine: " + str(old_cmd))
+    print("Backup: " + os.path.basename(path) + ".bak-" + ts + " (restore the old command from there)")
+data["statusLine"] = {"type": "command", "command": "python3 ~/.claude/statusline-pace.py", "refreshInterval": 60}
 with open(path, "w", encoding="utf-8") as f:
     json.dump(data, f, indent=2)
     f.write("\n")
