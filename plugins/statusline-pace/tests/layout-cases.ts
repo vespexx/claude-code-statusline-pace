@@ -1,5 +1,6 @@
 // Shared by tests/test_statusline.py and band.test.tsx. After the `export default` line start the content is plain JSON.
 // Time-of-day parts (HH:MM, Www-HH:MM, DD.MM) are replaced by ## and Www so the rows do not depend on the time zone.
+// Optional "colors": a part text (not masked) -> "green" or "yellow"; the part must have that colour.
 export default [
   {
     "name": "claude engine only, head with effort and ctx",
@@ -163,5 +164,77 @@ export default [
     "rows": [
       "gpt-4 ctx 34%"
     ]
+  },
+  {
+    "name": "go windows and go free ok: the status is green",
+    "now_ms": 1800000000000,
+    "engine": [],
+    "state": {
+      "plans": {
+        "go": {
+          "5h": {
+            "utilization": 0.14,
+            "reset": 1800010800
+          },
+          "7d": {
+            "utilization": 0.45,
+            "reset": 1800432000
+          }
+        },
+        "gofree": {
+          "status": "ok"
+        }
+      }
+    },
+    "model_id": "beam-free-cloud-opencode-go",
+    "label": "beam-free",
+    "effort": "",
+    "ctx": null,
+    "showModel": true,
+    "showContext": false,
+    "rows": [
+      "beam-free",
+      "Go      5h pace 14/40% ETA -/##:## · 7d pace 45/29% ETA Www-##:##/Www-##:##",
+      "Go Free ok"
+    ],
+    "colors": {
+      "ok": "green"
+    }
+  },
+  {
+    "name": "go windows and go free blocked: the status is yellow",
+    "now_ms": 1800000000000,
+    "engine": [],
+    "state": {
+      "plans": {
+        "go": {
+          "5h": {
+            "utilization": 0.14,
+            "reset": 1800010800
+          },
+          "7d": {
+            "utilization": 0.45,
+            "reset": 1800432000
+          }
+        },
+        "gofree": {
+          "status": "blocked beam-free till Thu-23:00"
+        }
+      }
+    },
+    "model_id": "beam-free-cloud-opencode-go",
+    "label": "beam-free",
+    "effort": "",
+    "ctx": null,
+    "showModel": true,
+    "showContext": false,
+    "rows": [
+      "beam-free",
+      "Go      5h pace 14/40% ETA -/##:## · 7d pace 45/29% ETA Www-##:##/Www-##:##",
+      "Go Free blocked beam-free till Www-##:##"
+    ],
+    "colors": {
+      "blocked beam-free till Thu-23:00": "yellow"
+    }
   }
 ]

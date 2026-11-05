@@ -823,6 +823,7 @@ type Case = {
   showModel: boolean
   showContext: boolean
   rows: string[]
+  colors?: Record<string, 'green' | 'yellow'>
 }
 
 // Times of day are masked so the rows do not depend on the time zone (the Python test masks the same way).
@@ -840,6 +841,11 @@ for (const c of cases as Case[]) {
     }
     const rows = bandRows(snap, c.label, c.now_ms, c.showModel, c.showContext, c.state)
     expect(plain(rows).map(mask)).toEqual(c.rows)
+    for (const [text, colour] of Object.entries(c.colors ?? {})) {
+      const part = rows.flat().find(p => p.text === text)
+      expect(part).toBeDefined()
+      expect(part!.color).toBe(colour === 'green' ? 'success' : 'warning')
+    }
   })
 }
 
@@ -934,4 +940,45 @@ test('readAgents lists transcripts written in the last 120 s, with type and mode
   } as never
   setAgentsDir('/t/sid.jsonl', 'sid')
   expect(await readAgents($, now)).toEqual([['worker-coder', 'm1'], ['agent', null]])
+})
+
+// --- v0.4.2: Go Free, a status-only row directly under Go ---
+
+test('planOf: beam-free is gofree, not go', () => {
+  expect(planOf('beam-free-cloud-opencode-go')).toBe('gofree')
+  expect(planOf('iceman-contributor-free')).toBe('gofree')
+  expect(planOf('glm-5.3-flash-cloud-opencode-go-direct')).toBe('go')
+})
+
+test('bandRows: Go Free status row comes directly after Go, bold for a free model', () => {
+  const state = { plans: { go: { '5h': { utilization: 0.14, reset: SEC + 3 * 3600 } }, gofree: { status: 'ok' } } }
+  const rows = bandRows({ effort: '', windows: [], ctx: null }, 'beam-free-cloud-opencode-go', NOW_TEST, false, false, state)
+  expect(rows.length).toBe(2)
+  expect(rowText(rows[0]!).startsWith('Go ')).toBe(true)
+  expect(rowText(rows[1]!)).toBe('Go Free ok')
+  expect(rows[1]!.find(p => p.text === 'Go Free')!.bold).toBe(true)
+  expect(rows[0]!.find(p => p.text === 'Go')!.bold).toBe(false)
+})
+
+test('bandRows: row order is Claude, Fable, Go, Go Free, z.ai, OpenRouter, Gemini', () => {
+  const state = {
+    plans: {
+      fable: { '7d': { utilization: 0.4, reset: SEC + 4 * 86400 } },
+      go: { '5h': { utilization: 0.14, reset: SEC + 3 * 3600 } },
+      gofree: { status: 'ok' },
+      zai: { '5h': { utilization: 0.2, reset: SEC + 2 * 3600 } },
+      openrouter: { '1d': { utilization: 0.5, reset: SEC + 86400 } },
+      gemini: { status: 'ok' },
+    },
+  }
+  const rows = bandRows(claudeSnap, 'claude-opus-5-5', NOW_TEST, false, false, state)
+  expect(rows.map(r => r[0]!.text)).toEqual(['Claude', 'Fable', 'Go', 'Go Free', 'z.ai', 'OpenRouter', 'Gemini'])
+})
+
+test('bandRows: a Go Free status other than ok is yellow, not green', () => {
+  const state = { plans: { gofree: { status: 'blocked beam-free till Thu-23:00' } } }
+  const rows = bandRows({ effort: '', windows: [], ctx: null }, 'beam-free-cloud-opencode-go', NOW_TEST, false, false, state)
+  expect(rows.length).toBe(1)
+  expect(rows[0]!.find(p => p.text === 'blocked beam-free till Thu-23:00')!.color).toBe('warning')
+  expect(rows[0]!.some(p => p.color === 'success')).toBe(false)
 })

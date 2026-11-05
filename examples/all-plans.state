@@ -3,6 +3,7 @@
            "go": {"5h": {"utilization": 0.14, "reset": "@NOW+3h"},
                   "7d": {"utilization": 1.0, "reset": "@NOW+6d"},
                   "1mo": {"utilization": 0.73, "reset": "@NOW+26d"}},
+           "gofree": {"status": "ok"},
            "zai": {"5h": {"utilization": 0.2, "reset": "@NOW+3.5h"},
                    "7d": {"utilization": 0.93, "reset": "@NOW+2.9d"}},
            "openrouter": {"1d": {"utilization": 0.31, "reset": "@NOW+14h"},

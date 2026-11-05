@@ -141,6 +141,10 @@ class Plans(unittest.TestCase):
         # gemini after openrouter: gemini via OpenRouter counts as openrouter
         self.assertEqual(sl.plan_of("openrouter-gemini-model", "Gemini (OpenRouter)"), "openrouter")
         self.assertEqual(sl.plan_of("gemini-openrouter", "Gemini"), "openrouter")
+        # gofree before go: the id also contains "opencode-go"
+        self.assertEqual(sl.plan_of("beam-free-cloud-opencode-go", ""), "gofree")
+        self.assertEqual(sl.plan_of("beam-free", "beam-free"), "gofree")
+        self.assertEqual(sl.plan_of("iceman-contributor-free", ""), "gofree")
 
     def test_short_label(self):
         self.assertEqual(sl.short_label(GO_LABEL), "GLM5.3flash (Go Plus, ≈360M вых.ток/мес)")
@@ -650,6 +654,40 @@ class StatusAndGemini(unittest.TestCase):
             self.assertNotIn("  ", plain)  # no double spaces
 
 
+class GoFree(unittest.TestCase):
+    def test_row_order(self):
+        state = {"plans": {
+            "fable": {"7d": {"utilization": 0.4, "reset": NOW + 4 * 86400}},
+            "go": {"5h": {"utilization": 0.14, "reset": NOW + 3 * 3600}},
+            "gofree": {"status": "ok"},
+            "zai": {"5h": {"utilization": 0.2, "reset": NOW + 2 * 3600}},
+            "openrouter": {"1d": {"utilization": 0.5, "reset": NOW + 86400}},
+            "gemini": {"status": "ok"},
+        }}
+        rows = sl.build_rows([("5h", 0.3, NOW + 3600)], "claude-opus-5-5", "Opus 5.5", "", True, False, None, state, NOW)
+        plain = [sl.re.sub(r"\x1b\[\d+m", "", r) for r in rows[1:]]
+        self.assertEqual([r[:len("OpenRouter")].rstrip() for r in plain],  # labels are padded to the widest one
+                         ["Claude", "Fable", "Go", "Go Free", "z.ai", "OpenRouter", "Gemini"])
+
+    def test_status_row_after_go_and_bold(self):
+        state = {"plans": {"go": {"5h": {"utilization": 0.14, "reset": NOW + 3 * 3600}},
+                           "gofree": {"status": "ok"}}}
+        rows = sl.build_rows([], "beam-free-cloud-opencode-go", "beam-free", "", False, False, None, state, NOW)
+        self.assertEqual(len(rows), 2)
+        plain = [sl.re.sub(r"\x1b\[\d+m", "", r) for r in rows]
+        self.assertTrue(plain[0].startswith("Go "))
+        self.assertEqual(plain[1], "Go Free ok")
+        self.assertIn(sl.BLD + "Go Free" + sl.RST, rows[1])
+        self.assertNotIn(sl.BLD, rows[0])
+
+    def test_status_not_ok_is_yellow(self):
+        state = {"plans": {"gofree": {"status": "blocked beam-free till Thu-23:00"}}}
+        rows = sl.build_rows([], "beam-free-cloud-opencode-go", "beam-free", "", False, False, None, state, NOW)
+        self.assertEqual(len(rows), 1)
+        self.assertIn(sl.YEL + "blocked beam-free till Thu-23:00" + sl.RST, rows[0])
+        self.assertNotIn(sl.GRN, rows[0])
+
+
 class Weekday(unittest.TestCase):
     def test_7d_weekday_matches_the_date(self):
         ts = time.mktime((2027, 1, 15, 8, 52, 0, 0, 0, -1))  # a Friday, local time
@@ -750,6 +788,8 @@ class SharedLayoutCases(unittest.TestCase):
                                  c["ctx"], c["state"] or {}, c["now_ms"] / 1000)
             with self.subTest(c["name"]):
                 self.assertEqual([self.mask(r) for r in rows], c["rows"])
+                for text, colour in c.get("colors", {}).items():
+                    self.assertIn({"green": sl.GRN, "yellow": sl.YEL}[colour] + text + sl.RST, "".join(rows))
 
 
 if __name__ == "__main__":

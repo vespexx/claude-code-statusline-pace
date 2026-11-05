@@ -11,7 +11,7 @@ A bad input gives exit code 2 and a one-line message. Stdlib only.
 import argparse, datetime, json, math, os, sys, time
 
 KINDS = ("5h", "1d", "7d", "1mo")
-PLANS = ("claude", "fable", "go", "zai", "openrouter", "gemini")
+PLANS = ("claude", "fable", "go", "gofree", "zai", "openrouter", "gemini")
 
 
 class BadInput(Exception):
