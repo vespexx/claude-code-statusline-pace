@@ -7,7 +7,7 @@ import type { Kind, Snap, Win } from '../types'
 // v0.4: the head (model, effort, ctx) on its own line, then one aligned row per plan; a plan's status text;
 // the running sub-agents on the last line.
 // Kind order: 5h, 1d, 7d, 1mo.
-// Plan order: claude, fable, go, zai, openrouter, gemini. Claude and per-model weekly limits (Fable) also come from
+// Plan order: claude, fable, go, gofree, zai, openrouter, gemini. Claude and per-model weekly limits (Fable) also come from
 // the subscription usage endpoint, read with the engine-held credential (the token never reaches the plugin).
 
 const snap = atom({ plugin: 'statusline-pace', key: 'snap' } as const, null, {
@@ -69,7 +69,7 @@ export function labelItems(label: string): [string, string[]] {
 }
 
 // Mirrors statusline.py plan_of: takes the whole /model entry string.
-// Returns 'claude', 'fable', 'go', 'zai', 'openrouter', 'gemini', or ''.
+// Returns 'claude', 'fable', 'go', 'gofree', 'zai', 'openrouter', 'gemini', or ''.
 export function planOf(model: string): Plan | '' {
   const s = model.toLowerCase()
   const [, items] = labelItems(model)
@@ -85,6 +85,10 @@ export function planOf(model: string): Plan | '' {
   // gemini after openrouter: a Gemini model through OpenRouter counts as OpenRouter
   if (s.includes('gemini')) {
     return 'gemini'
+  }
+  // gofree check before go: "beam-free-cloud-opencode-go" also contains "opencode-go"
+  if (s.includes('beam-free') || s.includes('iceman-contributor-free')) {
+    return 'gofree'
   }
   if (s.includes('opencode-go') || itemSet.has('Go') || itemSet.has('Go Plus')) {
     return 'go'
@@ -116,7 +120,7 @@ function isStateStale(state: unknown, now: number = Date.now()): boolean {
   return now - updated * 1000 > STALE_THRESHOLD_MS
 }
 
-type Plan = 'claude' | 'fable' | 'go' | 'zai' | 'openrouter' | 'gemini'
+type Plan = 'claude' | 'fable' | 'go' | 'gofree' | 'zai' | 'openrouter' | 'gemini'
 
 // Mirrors statusline.py state_plan: plans.<plan> of the state file ({} when
 // absent), `subscription` for the Claude fallback. Stale file (updated > 6h
@@ -195,8 +199,8 @@ export function oneWin(win: Win, now: number): { text: string; color?: string } 
 
 type Part = { text: string; color?: string; dim?: boolean; bold?: boolean }
 
-const PLAN_NAME = { claude: 'Claude', fable: 'Fable', go: 'Go', zai: 'z.ai', openrouter: 'OpenRouter', gemini: 'Gemini' } as const
-const PLAN_ORDER = ['claude', 'fable', 'go', 'zai', 'openrouter', 'gemini'] as const
+const PLAN_NAME = { claude: 'Claude', fable: 'Fable', go: 'Go', gofree: 'Go Free', zai: 'z.ai', openrouter: 'OpenRouter', gemini: 'Gemini' } as const
+const PLAN_ORDER = ['claude', 'fable', 'go', 'gofree', 'zai', 'openrouter', 'gemini'] as const
 const KIND_ORDER: Kind[] = ['5h', '1d', '7d', '1mo']
 
 // The band as aligned rows of parts. Line 1 is the head (`<model> <effort>

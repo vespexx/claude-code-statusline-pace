@@ -4,7 +4,7 @@ Shows how fast you burn your Claude Code subscription limits and **when the plan
 share against the elapsed share of each window (5h, 7d, ...), a run-out ETA, yellow when you are ahead of pace and red when a limit is used up. A last
 line lists the sub-agents running right now and the model each one really answered with.
 
-**Current release: [v0.4.1](https://github.com/vespexx/claude-code-statusline-pace/releases/tag/v0.4.1)** —
+**Current release: [v0.4.2](https://github.com/vespexx/claude-code-statusline-pace/releases/tag/v0.4.2)** —
 [install it as a plugin](#a-plugin-band-above-the-prompt) or [as a status line](#b-a-status-line-below-the-prompt).
 
 ## Two ways to show it
@@ -19,7 +19,7 @@ or when you want the rows below the prompt.
 | Needs | a recent Claude Code with plugin mods (tested on 2.1.311) | any Claude Code, Python 3 (stdlib only) |
 | Your existing status line | kept | replaced |
 | Fable row (Max $100 and above) | on by default, the plugin never sees the token | opt-in `PACE_OAUTH=1`, the script reads the token itself |
-| Other plans (Go, z.ai, OpenRouter, Gemini) | option `stateFile` | env `PACE_STATE_FILE` |
+| Other plans (Go, Go Free, z.ai, OpenRouter, Gemini) | option `stateFile` | env `PACE_STATE_FILE` |
 
 The text blocks under the pictures are the same examples rendered at another moment, so their clock times differ from
 the pictures.
@@ -40,7 +40,7 @@ A: no setup after install. B: add `PACE_OAUTH=1` to the command for the Fable ro
 without it B shows the Claude row only. On Pro (no Fable limit) both show the Claude row only. One plan row is never
 padded.
 
-**Several subscriptions** (Claude, Fable, OpenCode Go, z.ai, OpenRouter, Gemini) from a [windows file](#windows-file-for-other-plans),
+**Several subscriptions** (Claude, Fable, OpenCode Go, Go Free, z.ai, OpenRouter, Gemini) from a [windows file](#windows-file-for-other-plans),
 with three sub-agents running:
 
 | A. Plugin |
@@ -56,6 +56,7 @@ GLM5.3flash (Go Plus) medium ctx 42%
 Claude     5h pace 38/60% ETA -/15:18                              · 7d pace 19/17% ETA Mon-16:05/Tue-08:30
 Fable                                                                7d pace 40/43% ETA -/Sun-13:18
 Go         5h pace 14/40% ETA -/16:18                              · 7d pace 100/14% ETA now/Tue-13:18      · 1mo pace 73/13% ETA 06.11/30.11
+Go Free    ok
 z.ai       5h pace 20/30% ETA -/16:48                              · 7d pace 93/59% ETA Wed-20:42/Sat-10:54
 OpenRouter                              1d pace 31/42% ETA -/03:18 · 7d pace 30/43% ETA -/Sun-13:18
 Gemini     ok
@@ -73,14 +74,14 @@ Claude Code screen, and the times are relative to the moment of the run. The plu
 | Part | Meaning |
 | --- | --- |
 | `Opus 5.5 high ctx 12%` | line 1: the selected model, effort level, and context fill |
-| `Claude` / `Fable` / `Go` / `z.ai` / `OpenRouter` / `Gemini` | one row per plan, Claude first; **bold** = the plan behind the selected model |
+| `Claude` / `Fable` / `Go` / `Go Free` / `z.ai` / `OpenRouter` / `Gemini` | one row per plan, Claude first; **bold** = the plan behind the selected model |
 | `5h` / `1d` / `7d` / `1mo` | the rate-limit window (column order fixed) |
 | `pace 38/60%` | used share of the limit / elapsed share of the window |
 | `ETA 15:20/16:40` | when the limit hits 100% at the current burn / when the window resets |
 | `ETA now/16:40` | the limit is already used up (red) |
 | `ETA -/13:03` | at the current burn the limit will not run out before the reset |
 | ` · ` | separator between windows of the same row |
-| `ok`, `slow 3.8-flash till 13:20` | a plan's status text from the windows file (green `ok`, else yellow), for plans without usage numbers |
+| `ok`, `slow 3.8-flash till 13:20` | a plan's status text from the windows file (green `ok`, else yellow), for plans without usage numbers: `Go Free` (the free models of OpenCode Go) and `Gemini` carry only a status, because free models have no usage API |
 | red / yellow / green / no colour | limit already used up (red), off pace (yellow), on pace (green), on pace in a row that already has a used-up limit (no colour) |
 | `agents coder:glm-5.3-flash, explorer:starting x2` | last line, dim, only while sub-agents run: type and the model of its last answer (`starting` before the first); a sub-agent counts as running while its transcript was written in the last 120 s |
 
@@ -163,7 +164,7 @@ others one at a time (`/plugin disable <name>`) and open a new session.
 Needs Python 3 (stdlib only). Download the script of the release:
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/vespexx/claude-code-statusline-pace/v0.4.1/statusline.py -o ~/.claude/statusline-pace.py
+curl -fsSL https://raw.githubusercontent.com/vespexx/claude-code-statusline-pace/v0.4.2/statusline.py -o ~/.claude/statusline-pace.py
 ```
 
 Merge this key into your `~/.claude/settings.json` (do not replace the file), then restart Claude Code. `statusLine` is
@@ -196,13 +197,13 @@ Without a subscription the script prints line 1 (the model) alone; the sub-agent
 
 ## Windows file for other plans
 
-Go, z.ai, OpenRouter, Gemini (and Fable, when you do not use the usage endpoint) come from a JSON file that some other
-tool keeps fresh. Nothing in this repo fetches them for you: with no such file you get no Go, z.ai, OpenRouter or
-Gemini row. The author runs a private exporter (every 5 minutes) that polls the vendors' usage APIs; any tool
+Go, Go Free, z.ai, OpenRouter, Gemini (and Fable, when you do not use the usage endpoint) come from a JSON file that
+some other tool keeps fresh. Nothing in this repo fetches them for you: with no such file you get no Go, Go Free, z.ai,
+OpenRouter or Gemini row. The author runs a private exporter (every 5 minutes) that polls the vendors' usage APIs; any tool
 that writes the same shape works. To write it by hand or from a cron job, use the generator (in a clone of this repo, or download it alone):
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/vespexx/claude-code-statusline-pace/v0.4.1/scripts/make_windows.py -o make_windows.py
+curl -fsSL https://raw.githubusercontent.com/vespexx/claude-code-statusline-pace/v0.4.2/scripts/make_windows.py -o make_windows.py
 python3 make_windows.py --plan go 5h=14%@2026-11-04T18:00 7d=45%@2026-11-09T03:00 \
   --plan gemini status=ok -o ~/.local/state/subscription-quotas/windows.json
 ```
@@ -216,6 +217,7 @@ The shape:
     "claude": {"5h": {"utilization": 0.38, "reset": 1793800000}, "7d": {"utilization": 0.19, "reset": 1794300000}},
     "fable": {"7d": {"utilization": 0.4, "reset": 1794300000}},
     "go": {"5h": {}, "7d": {}, "1mo": {}},
+    "gofree": {"status": "ok"},
     "zai": {"5h": {}, "7d": {}},
     "openrouter": {"1d": {}, "7d": {}},
     "gemini": {"status": "ok"}
@@ -226,17 +228,19 @@ The shape:
 - `utilization` is a 0..1 fraction (0.38 = 38% used); `reset` is epoch seconds when the window rolls over.
 - `status` (optional, any plan) is a short text, at most 40 characters: shown after the plan's windows, or alone when
   the plan has no windows. Green when it is `ok`, else yellow.
-- A window or a plan can be absent. Rows are drawn in the order Claude, Fable, Go, z.ai, OpenRouter, Gemini.
+- A window or a plan can be absent. Rows are drawn in the order Claude, Fable, Go, Go Free, z.ai, OpenRouter, Gemini.
 - What a window measures is up to the writer. The author's exporter writes OpenRouter `1d` = free-model requests used
   today / the daily request limit (resets 00:00 UTC) and `7d` = USD spent / the key's weekly budget. Gemini's free tier
   has no usage API, so the author's router writes only a status (`ok`, or `slow <model> till HH:MM` while a Gemini model
-  answers slowly).
+  answers slowly). The free models of OpenCode Go (`beam-free`) do not use the paid Go allowance but have their own
+  limit, also without a usage API: the `Go Free` row carries only a status (`ok`, `blocked <model> till <time>` after a
+  429, `slow <model> till <time>`).
 - **Stale file:** when `now - updated > 21600` s (6 hours), the plans of the file are ignored. No `updated` key = the
   data is used.
 - Claude's windows come from the engine (stdin `rate_limits` for the status line); the file's `plans.claude` (or the
   old router shape `{"subscription": {"5h": ..., "7d": ...}}`) is only the fallback before the first answer.
 - The bold plan (the plan behind the selected model) is found by name: `fable` and `openrouter` first, then `gemini`,
-  `go` (`opencode-go`, label `Go` / `Go Plus`), `zai`, then `claude` (`claude`, `opus`, `sonnet`, `haiku`, label
+  `gofree` (`beam-free`, `iceman-contributor-free`; checked before `go`), `go` (`opencode-go`, label `Go` / `Go Plus`), `zai`, then `claude` (`claude`, `opus`, `sonnet`, `haiku`, label
   `subscription`).
 
 ## Try it without Claude Code

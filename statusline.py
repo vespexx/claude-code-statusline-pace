@@ -22,16 +22,18 @@ ETA     when the window reaches 100% if the burn so far continues / when the win
 colour  red when the limit is used up (not stale, used >= 100%, `ETA now/...`); yellow off pace: 5h used > max(1.5 x elapsed,
           10%) or > 75%; 1d/7d/1mo used >= 90% OR used > elapsed + 5%; green on pace; no colour on pace in a plan row
           that has a used-up window
-bold    the plan label (Claude/Fable/Go/z.ai/OpenRouter) of the plan behind the selected model
+bold    the plan label (Claude/Fable/Go/Go Free/z.ai/OpenRouter/Gemini) of the plan behind the selected model
 
-Plans (row order): claude, fable, go, zai, openrouter, gemini.
+Plans (row order): claude, fable, go, gofree, zai, openrouter, gemini.
 Claude windows from engine `rate_limits` on stdin (5h/7d), fallback to state file `plans.claude` or old `subscription`.
 All other plans only from state file `plans.<plan>`.
 plan_of: 'fable' when id/label contains "fable" (before claude check), 'openrouter' when contains "openrouter" (before claude),
-'gemini' when contains "gemini" (after openrouter: a Gemini model through OpenRouter counts as OpenRouter).
+'gemini' when contains "gemini" (after openrouter: a Gemini model through OpenRouter counts as OpenRouter),
+'gofree' when contains "beam-free" or "iceman-contributor-free" (before go: "beam-free-cloud-opencode-go" contains "opencode-go").
+Go Free (the free models of OpenCode Go) and Gemini have no usage API: their rows carry only a status text.
 Kind order: 5h, 1d, 7d, 1mo. 1d length 86400s, format HH:MM like 5h. Off-pace rule for 1d = long-window rule.
-State file: `{"updated": <epoch>, "plans": {"claude": {...}, "fable": {...}, "go": {...}, "zai": {...}, "openrouter": {...},
-"gemini": {...}}}`; each plan: `{"5h": {"utilization": 0..1, "reset": <epoch>}, ..., "status": "<text>"}`.
+State file: `{"updated": <epoch>, "plans": {"claude": {...}, "fable": {...}, "go": {...}, "gofree": {...}, "zai": {...},
+"openrouter": {...}, "gemini": {...}}}`; each plan: `{"5h": {"utilization": 0..1, "reset": <epoch>}, ..., "status": "<text>"}`.
 A window or plan can be absent. Old router shape `{"subscription": {...}}` still works as Claude fallback.
 Stale file (updated > 6h ago) ignored. NaN filtered, negative clamped.
 Stdlib only, never raises.
@@ -45,8 +47,9 @@ TIME_FMT = {"5h": "%H:%M", "1d": "%H:%M", "7d": "%a-%H:%M", "1mo": "%d.%m"}
 PLAN_TAGS = {"Go", "Go Plus", "subscription", "free tier", "Fable", "OpenRouter"}
 STALE_THRESHOLD_S = 21600  # 6 hours
 
-PLAN_DISPLAY = {"claude": "Claude", "fable": "Fable", "go": "Go", "zai": "z.ai", "openrouter": "OpenRouter", "gemini": "Gemini"}
-PLAN_ORDER = ("claude", "fable", "go", "zai", "openrouter", "gemini")
+PLAN_DISPLAY = {"claude": "Claude", "fable": "Fable", "go": "Go", "gofree": "Go Free", "zai": "z.ai",
+                "openrouter": "OpenRouter", "gemini": "Gemini"}
+PLAN_ORDER = ("claude", "fable", "go", "gofree", "zai", "openrouter", "gemini")
 KIND_ORDER = ("5h", "1d", "7d", "1mo")
 WEEK = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"]
 
@@ -177,7 +180,7 @@ def label_items(label):
 
 
 def plan_of(model_id, label):
-    """`claude`, `fable`, `go`, `zai`, `openrouter`, `gemini` or "" (no plan with windows) for the model, by its id and its /model label."""
+    """`claude`, `fable`, `go`, `gofree`, `zai`, `openrouter`, `gemini` or "" (no plan with windows) for the model, by its id and its /model label."""
     s = (model_id + " " + label).lower()
     items = set(label_items(label)[1])
     # fable check before claude
@@ -188,6 +191,9 @@ def plan_of(model_id, label):
         return "openrouter"
     if "gemini" in s:
         return "gemini"
+    # gofree check before go: "beam-free-cloud-opencode-go" also contains "opencode-go"
+    if "beam-free" in s or "iceman-contributor-free" in s:
+        return "gofree"
     if "opencode-go" in s or items & {"Go", "Go Plus"}:
         return "go"
     # zai check before claude: "zai" in id or label item starting with "z.ai"
