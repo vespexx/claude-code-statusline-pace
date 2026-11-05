@@ -63,6 +63,9 @@ Gemini     ok
 agents coder:glm-5.3-flash, explorer:starting x2
 ```
 
+`Go Free` and `Gemini` have no percentages: free models have no usage API, so those rows show only a status. Here the
+paid Go limit is used up (red `ETA now`) while the free Go models are still usable (`Go Free ok`).
+
 The pictures are generated, not screen captures: the rows are the real output of `statusline.py` for
 `examples/max-100.*` and `examples/all-plans.*`; the frame around them (a chat line, the prompt box) is a mock of the
 Claude Code screen, and the times are relative to the moment of the run. The plugin draws the same rows:
@@ -81,8 +84,8 @@ Claude Code screen, and the times are relative to the moment of the run. The plu
 | `ETA now/16:40` | the limit is already used up (red) |
 | `ETA -/13:03` | at the current burn the limit will not run out before the reset |
 | ` · ` | separator between windows of the same row |
-| `ok`, `slow 3.8-flash till 13:20` | a plan's status text from the windows file (green `ok`, else yellow), for plans without usage numbers: `Go Free` (the free models of OpenCode Go) and `Gemini` carry only a status, because free models have no usage API |
-| red / yellow / green / no colour | limit already used up (red), off pace (yellow), on pace (green), on pace in a row that already has a used-up limit (no colour) |
+| `ok`, `slow 3.8-flash till 13:20`, `blocked beam-free till Thu-23:00` | a plan's status text from the windows file, for plans without usage numbers: `Go Free` (the free models of OpenCode Go) and `Gemini` carry only a status, because free models have no usage API. `ok` = no block seen recently, not a measured quota; `slow <model> till HH:MM` = that model answers slowly; `blocked <model> till Thu-23:00` = the vendor answered 429 for that free model and it stays blocked until the given time (7d ETA weekday format). A block of a free Go model does not touch the paid Go windows. Green `ok`, anything else yellow |
+| red / yellow / green / no colour | limit already used up (red), off pace (yellow), on pace (green), on pace in a row that already has a used-up limit (no colour). A status text that is not `ok` is yellow too |
 | `agents coder:glm-5.3-flash, explorer:starting x2` | last line, dim, only while sub-agents run: type and the model of its last answer (`starting` before the first); a sub-agent counts as running while its transcript was written in the last 120 s |
 
 **Columns are aligned** (monospace): each window column has the width of its widest cell; a plan's missing window is
