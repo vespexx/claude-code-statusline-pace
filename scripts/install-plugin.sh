@@ -1,47 +1,28 @@
 #!/usr/bin/env bash
-# Install the statusline-pace plugin for Claude Code (band above the prompt).
-# Run this from a terminal, then open a new Claude Code session.
-# Version: v0.4.1
+# Install the statusline-pace plugin for Claude Code; read it before running: curl -fsSL <url> | less
 set -euo pipefail
 
 REPO="vespexx/claude-code-statusline-pace"
 PLUGIN="statusline-pace"
+PLUGIN_ID="statusline-pace@statusline-pace"
 TAG="v0.4.1"
 
-echo "=== Installing ${PLUGIN} v${TAG} (band above the prompt) ==="
+command -v claude >/dev/null 2>&1 || { echo "Error: the 'claude' CLI is not on PATH. Install Claude Code first."; exit 1; }
+
+echo "=== Installing ${PLUGIN} ${TAG} (band above the prompt) ==="
 
 # Method 1: built-in marketplace install.
-if claude plugin install "${PLUGIN}" --marketplace "${REPO}" 2>/dev/null; then
-    echo "Installed via --marketplace. Open a new Claude Code session to see the band."
+if claude plugin install "${PLUGIN}" --marketplace "${REPO}"; then
+    echo "Installed via --marketplace."
+    echo "Open a new Claude Code session to see the band."
     exit 0
 fi
 
-# Method 2: add marketplace first, then install.
-if claude plugin marketplace add "${REPO}" 2>/dev/null && \
-   claude plugin install "${PLUGIN}"; then
-    echo "Installed via marketplace add. Open a new Claude Code session to see the band."
-    exit 0
-fi
+echo "Method 1 failed. Trying: add the marketplace, then install ${PLUGIN_ID}."
 
-# Method 3: manual install from the release tarball.
-TMPDIR=$(mktemp -d)
-trap 'rm -rf "$TMPDIR"' EXIT
+# Method 2: add the marketplace first, then install by plugin id.
+claude plugin marketplace add "${REPO}"
+claude plugin install "${PLUGIN_ID}"
 
-echo "Downloading release assets for ${TAG}..."
-curl -fsSL "https://github.com/${REPO}/releases/download/${TAG}/plugin.tar.gz" \
-    -o "${TMPDIR}/plugin.tar.gz" 2>/dev/null || {
-    echo "Error: could not download plugin.tar.gz"
-    exit 1
-}
-
-# Find the Claude Code config directory.
-CLAUDE_DIR="${CLAUDE_HOME:-$HOME/.claude}"
-mkdir -p "${CLAUDE_DIR}/plugins"
-
-tar xzf "${TMPDIR}/plugin.tar.gz" -C "${CLAUDE_DIR}/plugins" 2>/dev/null || {
-    echo "Error: could not extract plugin.tar.gz"
-    exit 1
-}
-
-echo "Installed manually to ${CLAUDE_DIR}/plugins."
+echo "Installed via marketplace add."
 echo "Open a new Claude Code session to see the band."
