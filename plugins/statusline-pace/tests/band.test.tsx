@@ -823,6 +823,7 @@ type Case = {
   showModel: boolean
   showContext: boolean
   rows: string[]
+  colors?: Record<string, 'green' | 'yellow'>
 }
 
 // Times of day are masked so the rows do not depend on the time zone (the Python test masks the same way).
@@ -840,6 +841,11 @@ for (const c of cases as Case[]) {
     }
     const rows = bandRows(snap, c.label, c.now_ms, c.showModel, c.showContext, c.state)
     expect(plain(rows).map(mask)).toEqual(c.rows)
+    for (const [text, colour] of Object.entries(c.colors ?? {})) {
+      const part = rows.flat().find(p => p.text === text)
+      expect(part).toBeDefined()
+      expect(part!.color).toBe(colour === 'green' ? 'success' : 'warning')
+    }
   })
 }
 
@@ -967,4 +973,12 @@ test('bandRows: row order is Claude, Fable, Go, Go Free, z.ai, OpenRouter, Gemin
   }
   const rows = bandRows(claudeSnap, 'claude-opus-5-5', NOW_TEST, false, false, state)
   expect(rows.map(r => r[0]!.text)).toEqual(['Claude', 'Fable', 'Go', 'Go Free', 'z.ai', 'OpenRouter', 'Gemini'])
+})
+
+test('bandRows: a Go Free status other than ok is yellow, not green', () => {
+  const state = { plans: { gofree: { status: 'blocked beam-free till Thu-23:00' } } }
+  const rows = bandRows({ effort: '', windows: [], ctx: null }, 'beam-free-cloud-opencode-go', NOW_TEST, false, false, state)
+  expect(rows.length).toBe(1)
+  expect(rows[0]!.find(p => p.text === 'blocked beam-free till Thu-23:00')!.color).toBe('warning')
+  expect(rows[0]!.some(p => p.color === 'success')).toBe(false)
 })

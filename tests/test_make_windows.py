@@ -25,6 +25,20 @@ class MakeWindows(unittest.TestCase):
         self.assertEqual(go["5h"]["reset"], datetime.datetime(2026, 11, 4, 18, 0).timestamp())  # naive = local
         self.assertEqual(d["plans"]["gemini"], {"status": "ok"})
 
+    def test_gofree_status(self):
+        code, out, _ = run("--plan", "gofree", "status=ok")
+        self.assertEqual(code, 0)
+        self.assertEqual(json.loads(out)["plans"], {"gofree": {"status": "ok"}})
+        with tempfile.TemporaryDirectory() as d:
+            path = os.path.join(d, "w.json")
+            code, out, _ = run("--plan", "gofree", "status=ok", "-o", path)
+            self.assertEqual((code, out), (0, ""))
+            with open(path) as f:
+                self.assertEqual(json.load(f)["plans"], {"gofree": {"status": "ok"}})
+        code, out, err = run("--plan", "gofree-x", "status=ok")
+        self.assertEqual((code, out), (2, ""))
+        self.assertEqual(len(err.strip().splitlines()), 1)
+
     def test_reset_forms(self):
         self.assertEqual(mw.parse_reset("1800000000"), 1800000000.0)
         self.assertEqual(mw.parse_reset("2027-01-15T08:00:00Z"), 1800000000.0)

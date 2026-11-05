@@ -680,6 +680,13 @@ class GoFree(unittest.TestCase):
         self.assertIn(sl.BLD + "Go Free" + sl.RST, rows[1])
         self.assertNotIn(sl.BLD, rows[0])
 
+    def test_status_not_ok_is_yellow(self):
+        state = {"plans": {"gofree": {"status": "blocked beam-free till Thu-23:00"}}}
+        rows = sl.build_rows([], "beam-free-cloud-opencode-go", "beam-free", "", False, False, None, state, NOW)
+        self.assertEqual(len(rows), 1)
+        self.assertIn(sl.YEL + "blocked beam-free till Thu-23:00" + sl.RST, rows[0])
+        self.assertNotIn(sl.GRN, rows[0])
+
 
 class Weekday(unittest.TestCase):
     def test_7d_weekday_matches_the_date(self):
@@ -781,6 +788,8 @@ class SharedLayoutCases(unittest.TestCase):
                                  c["ctx"], c["state"] or {}, c["now_ms"] / 1000)
             with self.subTest(c["name"]):
                 self.assertEqual([self.mask(r) for r in rows], c["rows"])
+                for text, colour in c.get("colors", {}).items():
+                    self.assertIn({"green": sl.GRN, "yellow": sl.YEL}[colour] + text + sl.RST, "".join(rows))
 
 
 if __name__ == "__main__":
